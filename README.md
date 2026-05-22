@@ -6,7 +6,7 @@
 
 ```txt
 1. 上传图片或选择示例图片
-   -> 后端调用视觉模型 zai-org/GLM-4.6V
+   -> 后端调用视觉模型 Pro/moonshotai/Kimi-K2.6
    -> 得到中文图片描述
 
 2. 使用图片描述进行三分类
@@ -72,7 +72,7 @@ http://localhost:5173/debug.html
 SILICONFLOW_API_KEY=YOUR_API_KEY
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 SILICONFLOW_MODEL=Pro/zai-org/GLM-4.7
-SILICONFLOW_VISION_MODEL=zai-org/GLM-4.6V
+SILICONFLOW_VISION_MODEL=Pro/moonshotai/Kimi-K2.6
 ```
 
 浏览器不会直接持有 API key。前端请求后端，后端再调用模型。
@@ -95,7 +95,7 @@ Install Command: npm install
 SILICONFLOW_API_KEY=YOUR_API_KEY
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 SILICONFLOW_MODEL=Pro/zai-org/GLM-4.7
-SILICONFLOW_VISION_MODEL=zai-org/GLM-4.6V
+SILICONFLOW_VISION_MODEL=Pro/moonshotai/Kimi-K2.6
 ```
 
 线上接口：

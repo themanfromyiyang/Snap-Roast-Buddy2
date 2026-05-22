@@ -9,7 +9,7 @@ const port = Number(process.env.PORT ?? 5173);
 const siliconFlowApiKey = process.env.SILICONFLOW_API_KEY ?? process.env.OPENAI_API_KEY;
 const siliconFlowBaseUrl = process.env.SILICONFLOW_BASE_URL ?? "https://api.siliconflow.cn/v1";
 const siliconFlowModel = process.env.SILICONFLOW_MODEL ?? "Pro/zai-org/GLM-4.7";
-const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "zai-org/GLM-4.6V";
+const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Pro/moonshotai/Kimi-K2.6";
 
 const mime = {
   ".html": "text/html; charset=utf-8",
