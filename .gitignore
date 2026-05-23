@@ -19,3 +19,7 @@ coverage/
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
+
+# Local product data and personal test photos
+local-data/
+local-photos/

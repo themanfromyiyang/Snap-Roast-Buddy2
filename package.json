@@ -6,7 +6,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "demo": "node --import tsx examples/demo.ts",
-    "build:frontend": "esbuild frontend/src/app.ts frontend/src/debug.ts --bundle --format=esm --platform=browser --outdir=frontend/dist",
+    "build:frontend": "esbuild frontend/src/app.ts frontend/src/debug.ts frontend/src/product.ts --bundle --format=esm --platform=browser --outdir=frontend/dist",
     "vercel-build": "npm run build:frontend",
     "dev": "node backend/server.mjs",
     "serve": "node backend/server.mjs"
