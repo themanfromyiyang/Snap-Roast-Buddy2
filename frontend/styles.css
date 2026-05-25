@@ -727,7 +727,7 @@ pre {
 
 .product-topbar {
   position: absolute;
-  top: max(8px, env(safe-area-inset-top));
+  top: calc(max(12px, env(safe-area-inset-top)) + clamp(8px, 2.8dvh, 22px));
   left: 14px;
   right: 14px;
   z-index: 5;
@@ -987,8 +987,8 @@ pre {
 }
 
 .viewfinder {
-  --viewfinder-top: calc(max(10px, env(safe-area-inset-top)) + 72px);
-  --viewfinder-bottom: calc(max(12px, env(safe-area-inset-bottom)) + 154px);
+  --viewfinder-top: calc(max(12px, env(safe-area-inset-top)) + clamp(106px, 15dvh, 150px));
+  --viewfinder-bottom: calc(max(14px, env(safe-area-inset-bottom)) + clamp(178px, 24dvh, 226px));
   --camera-preview-scale: 1;
   --camera-mirror-scale: 1;
   position: absolute;
@@ -1010,13 +1010,6 @@ pre {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   user-select: none;
-}
-
-.product-body.is-landscape .viewfinder {
-  --viewfinder-top: calc(max(8px, env(safe-area-inset-top)) + 58px);
-  --viewfinder-bottom: calc(max(8px, env(safe-area-inset-bottom)) + 104px);
-  width: min(100%, calc((100dvh - var(--viewfinder-top) - var(--viewfinder-bottom)) * 1.333));
-  aspect-ratio: 4 / 3;
 }
 
 .viewfinder:focus,
@@ -1112,19 +1105,29 @@ pre {
 .camera-zoom-strip {
   position: absolute;
   right: 12px;
-  bottom: 12px;
+  bottom: 10px;
   left: 12px;
   z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  min-height: 42px;
-  padding: 0 8px;
+  gap: 12px;
+  min-height: 34px;
+  padding: 3px calc(50% - 18px);
   overflow-x: auto;
   scroll-snap-type: x mandatory;
+  scroll-snap-stop: always;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  background: transparent;
+  border: 1px solid rgba(255, 250, 241, 0.16);
+  border-radius: 999px;
+  background: rgba(28, 28, 30, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 30px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
   pointer-events: auto;
 }
 
@@ -1135,16 +1138,18 @@ pre {
 .camera-zoom-strip button {
   display: grid;
   place-items: center;
-  min-width: 38px;
-  height: 32px;
+  flex: 0 0 auto;
+  min-width: 36px;
+  height: 28px;
   border: 0;
   border-radius: 999px;
   padding: 0 8px;
   background: transparent;
   color: rgba(255, 250, 241, 0.82);
-  font-size: 0.98rem;
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0;
+  scroll-snap-align: center;
   transition:
     transform 120ms cubic-bezier(0.25, 0.1, 0.25, 1),
     background-color 180ms cubic-bezier(0.25, 0.1, 0.25, 1),
@@ -1226,12 +1231,12 @@ pre {
 .camera-dock {
   position: fixed;
   right: calc((100vw - min(100vw, 430px)) / 2 + 12px);
-  bottom: max(10px, env(safe-area-inset-bottom));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + clamp(10px, 2.8dvh, 26px));
   left: calc((100vw - min(100vw, 430px)) / 2 + 12px);
   z-index: 50;
   display: grid;
-  gap: 10px;
-  padding: 10px 0 6px;
+  gap: 6px;
+  padding: 4px 0 0;
   background: linear-gradient(transparent 0%, rgba(0, 0, 0, 0.88) 28%, #000 100%);
   pointer-events: auto;
 }
@@ -1239,8 +1244,8 @@ pre {
 .product-body.is-landscape .camera-dock {
   right: max(12px, env(safe-area-inset-right));
   left: max(12px, env(safe-area-inset-left));
-  gap: 8px;
-  padding-top: 10px;
+  gap: 6px;
+  padding-top: 4px;
 }
 
 .camera-mode-strip {
@@ -1306,7 +1311,7 @@ pre {
   align-items: center;
   justify-items: center;
   gap: 18px;
-  min-height: 82px;
+  min-height: 78px;
 }
 
 .shutter-button {

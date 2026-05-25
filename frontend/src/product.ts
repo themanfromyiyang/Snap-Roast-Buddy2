@@ -162,6 +162,7 @@ let messageTimer = 0;
 let swipeStartX = 0;
 let swipeStartY = 0;
 let modeSnapTimer = 0;
+let zoomSnapTimer = 0;
 let albumSnapTimer = 0;
 let isSyncingAlbum = false;
 let visibleAlbumIndex = -1;
@@ -270,6 +271,13 @@ cameraZoomStrip.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-zoom]");
   if (!button) return;
   setCameraZoom(Number(button.dataset.zoom) || 1);
+  centerSelectedCameraZoom();
+});
+
+cameraZoomStrip.addEventListener("scroll", () => {
+  updateCameraZoomFromScroll();
+  window.clearTimeout(zoomSnapTimer);
+  zoomSnapTimer = window.setTimeout(snapCameraZoomToNearest, 90);
 });
 
 imageCarousel.addEventListener("scroll", () => syncAlbumScroll(imageCarousel));
@@ -324,12 +332,12 @@ async function startCamera() {
 
   stopCameraStream();
   try {
-    const isLandscape = isLandscapeCapture();
     cameraStream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: cameraFacingMode },
-        width: { ideal: isLandscape ? 1920 : 1440 },
-        height: { ideal: isLandscape ? 1440 : 1920 }
+        width: { ideal: 1080 },
+        height: { ideal: 1440 },
+        aspectRatio: { ideal: 0.75 }
       },
       audio: false
     });
@@ -381,12 +389,15 @@ async function captureFromCamera() {
     if (!cameraStream || cameraFeed.readyState < cameraFeed.HAVE_CURRENT_DATA) return;
   }
 
-  const isLandscape = isLandscapeCapture();
   const canvas = document.createElement("canvas");
-  canvas.width = isLandscape ? 1200 : 900;
-  canvas.height = isLandscape ? 900 : 1200;
+  const outputCanvas = document.createElement("canvas");
+  canvas.width = 900;
+  canvas.height = 1200;
+  outputCanvas.width = isLandscapeCapture() ? 1200 : 900;
+  outputCanvas.height = isLandscapeCapture() ? 900 : 1200;
   const context = canvas.getContext("2d");
-  if (!context) return;
+  const outputContext = outputCanvas.getContext("2d");
+  if (!context || !outputContext) return;
 
   const videoWidth = cameraFeed.videoWidth || canvas.width;
   const videoHeight = cameraFeed.videoHeight || canvas.height;
@@ -420,7 +431,16 @@ async function captureFromCamera() {
     context.scale(-1, 1);
   }
   context.drawImage(cameraFeed, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
-  selectedImageUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+  if (isLandscapeCapture()) {
+    outputContext.translate(outputCanvas.width, 0);
+    outputContext.rotate(Math.PI / 2);
+    outputContext.drawImage(canvas, 0, 0, canvas.width, canvas.height);
+  } else {
+    outputContext.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height);
+  }
+
+  selectedImageUrl = outputCanvas.toDataURL("image/jpeg", 0.92);
   showSelectedImagePreview(selectedImageUrl);
   cameraHint.textContent = settings.triggerMode === "auto" ? "Buddy 已经开始观察这张照片。" : "照片已就位，按开始生成。";
   if (settings.triggerMode === "auto") await startGenerationFromSelected();
@@ -492,6 +512,46 @@ function renderCameraZoom() {
     const value = Number(button.dataset.zoom) || 1;
     button.classList.toggle("is-selected", Math.abs(value - cameraZoom) < 0.05);
   });
+}
+
+function centerSelectedCameraZoom() {
+  const selected = cameraZoomStrip.querySelector<HTMLButtonElement>("button.is-selected");
+  if (!selected) return;
+  window.requestAnimationFrame(() => {
+    const targetLeft = selected.offsetLeft + selected.offsetWidth / 2 - cameraZoomStrip.clientWidth / 2;
+    cameraZoomStrip.scrollTo({
+      left: Math.max(0, targetLeft),
+      behavior: "smooth"
+    });
+  });
+}
+
+function updateCameraZoomFromScroll() {
+  const nearest = getNearestZoomButton();
+  const value = Number(nearest?.dataset.zoom);
+  if (!Number.isFinite(value) || Math.abs(value - cameraZoom) < 0.05) return;
+  setCameraZoom(value, false);
+}
+
+function snapCameraZoomToNearest() {
+  const nearest = getNearestZoomButton();
+  const value = Number(nearest?.dataset.zoom);
+  if (!Number.isFinite(value)) return;
+  if (Math.abs(value - cameraZoom) >= 0.05) {
+    setCameraZoom(value, true);
+  } else {
+    centerSelectedCameraZoom();
+  }
+}
+
+function getNearestZoomButton(): HTMLButtonElement | undefined {
+  const buttons = Array.from(cameraZoomStrip.querySelectorAll<HTMLButtonElement>("button[data-zoom]"));
+  if (!buttons.length) return undefined;
+  const center = cameraZoomStrip.scrollLeft + cameraZoomStrip.clientWidth / 2;
+  return buttons.reduce((best, button) => {
+    const distance = Math.abs(button.offsetLeft + button.offsetWidth / 2 - center);
+    return distance < best.distance ? { button, distance } : best;
+  }, { button: buttons[0], distance: Number.POSITIVE_INFINITY }).button;
 }
 
 function updateCameraFacingState() {
@@ -955,7 +1015,6 @@ function updateSetting(key: string, value: string) {
   if (key === "captureOrientation") {
     settings.captureOrientation = value as CaptureOrientation;
     syncOrientationState();
-    if (cameraStream) void startCamera();
   }
   let shouldCenterMode = false;
   if (key === "generationMode") {
@@ -1349,7 +1408,6 @@ syncCameraViewTransform();
 syncOrientationState();
 showCamera();
 window.setTimeout(centerSelectedCameraMode, 80);
+window.setTimeout(centerSelectedCameraZoom, 80);
 productRecordsLoadPromise = loadProductRecords();
 window.addEventListener("resize", syncOrientationState);
-window.addEventListener("orientationchange", syncOrientationState);
-window.screen.orientation?.addEventListener("change", syncOrientationState);

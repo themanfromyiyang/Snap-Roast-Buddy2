@@ -224,6 +224,7 @@ export async function handleSupabaseHealth(_req, res) {
     return sendJson(res, 200, {
       ok: true,
       table: supabaseRecordsTable,
+      keyType: describeSupabaseKeyType(),
       sampleCount: Array.isArray(rows) ? rows.length : 0
     });
   } catch (error) {
@@ -518,11 +519,21 @@ function supabaseRestBaseUrl() {
 }
 
 function supabaseHeaders(extra = {}) {
-  return {
+  const headers = {
     apikey: supabaseServiceRoleKey,
-    authorization: `Bearer ${supabaseServiceRoleKey}`,
     ...extra
   };
+  if (!supabaseServiceRoleKey?.startsWith("sb_secret_")) {
+    headers.authorization = `Bearer ${supabaseServiceRoleKey}`;
+  }
+  return headers;
+}
+
+function describeSupabaseKeyType() {
+  if (supabaseServiceRoleKey?.startsWith("sb_secret_")) return "secret";
+  if (supabaseServiceRoleKey?.startsWith("sb_service_role_")) return "service_role";
+  if (supabaseServiceRoleKey?.split(".").length === 3) return "legacy_jwt";
+  return "unknown";
 }
 
 function parseTotalCount(contentRange, fallback) {
