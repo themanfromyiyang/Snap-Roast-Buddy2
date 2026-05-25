@@ -7,7 +7,8 @@ const siliconFlowModel = process.env.SILICONFLOW_MODEL ?? "Pro/zai-org/GLM-4.7";
 const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Pro/moonshotai/Kimi-K2.6";
 const siliconFlowImageEditModel = process.env.SILICONFLOW_IMAGE_EDIT_MODEL ?? "Qwen/Qwen-Image-Edit-2509";
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
+const supabaseServiceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? process.env.UPABASE_SERVICE_ROLE_KEY;
 const supabaseRecordsTable = process.env.SUPABASE_PRODUCT_RECORDS_TABLE ?? "product_records";
 
 const textLayoutTypes = ["receipt", "big_text", "pixel_expression"];
@@ -509,7 +510,7 @@ function toProductRecordRow(record) {
 
 function requireSupabaseConfig() {
   if (supabaseUrl && supabaseServiceRoleKey) return;
-  throw Object.assign(new Error("Missing Supabase config. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Environment Variables."), {
+  throw Object.assign(new Error("Missing Supabase config. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Environment Variables. If you used UPABASE_SERVICE_ROLE_KEY, rename it to SUPABASE_SERVICE_ROLE_KEY."), {
     statusCode: 500
   });
 }

@@ -114,6 +114,7 @@ const manualStartPanel = mustQuery<HTMLDivElement>("#manualStartPanel");
 const cameraHint = mustQuery<HTMLParagraphElement>("#cameraHint");
 const modeStrip = mustQuery<HTMLDivElement>(".camera-mode-strip");
 const cameraZoomStrip = mustQuery<HTMLDivElement>("#cameraZoomStrip");
+const cameraZoomRange = mustQuery<HTMLInputElement>("#cameraZoomRange");
 const shutterButton = mustQuery<HTMLButtonElement>("#shutterButton");
 const galleryButton = mustQuery<HTMLButtonElement>("#galleryButton");
 const latestButton = mustQuery<HTMLButtonElement>("#latestButton");
@@ -162,7 +163,6 @@ let messageTimer = 0;
 let swipeStartX = 0;
 let swipeStartY = 0;
 let modeSnapTimer = 0;
-let zoomSnapTimer = 0;
 let albumSnapTimer = 0;
 let isSyncingAlbum = false;
 let visibleAlbumIndex = -1;
@@ -267,17 +267,12 @@ modeStrip.addEventListener("scroll", () => {
   modeSnapTimer = window.setTimeout(snapCameraModeToNearest, 90);
 });
 
-cameraZoomStrip.addEventListener("click", (event) => {
-  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-zoom]");
-  if (!button) return;
-  setCameraZoom(Number(button.dataset.zoom) || 1);
-  centerSelectedCameraZoom();
+cameraZoomRange.addEventListener("input", () => {
+  setCameraZoom(Number(cameraZoomRange.value) || 1, false);
 });
 
-cameraZoomStrip.addEventListener("scroll", () => {
-  updateCameraZoomFromScroll();
-  window.clearTimeout(zoomSnapTimer);
-  zoomSnapTimer = window.setTimeout(snapCameraZoomToNearest, 90);
+cameraZoomRange.addEventListener("change", () => {
+  softHaptic();
 });
 
 imageCarousel.addEventListener("scroll", () => syncAlbumScroll(imageCarousel));
@@ -311,7 +306,7 @@ document.querySelectorAll<HTMLElement>("[data-regenerate-setting]").forEach((gro
 
 document
   .querySelectorAll<HTMLButtonElement>(
-    ".product-back, .icon-button, .round-tool, .pill-button, .settings-upload-button, .shutter-button, .thumbnail-button, .camera-zoom-strip button, .segmented-control button, .option-list button"
+    ".product-back, .icon-button, .round-tool, .pill-button, .settings-upload-button, .shutter-button, .thumbnail-button, .segmented-control button, .option-list button"
   )
   .forEach((button) => {
     button.addEventListener("pointerdown", softHaptic);
@@ -508,50 +503,13 @@ async function applyCameraZoom() {
 }
 
 function renderCameraZoom() {
-  cameraZoomStrip.querySelectorAll<HTMLButtonElement>("button[data-zoom]").forEach((button) => {
-    const value = Number(button.dataset.zoom) || 1;
-    button.classList.toggle("is-selected", Math.abs(value - cameraZoom) < 0.05);
+  cameraZoomRange.value = String(cameraZoom);
+  const progress = `${16.667 + ((cameraZoom - 1) / 2) * 66.666}%`;
+  cameraZoomStrip.style.setProperty("--zoom-progress", progress);
+  cameraZoomStrip.querySelectorAll<HTMLElement>("[data-zoom-label]").forEach((label) => {
+    const value = Number(label.dataset.zoomLabel) || 1;
+    label.classList.toggle("is-selected", Math.abs(value - cameraZoom) < 0.18);
   });
-}
-
-function centerSelectedCameraZoom() {
-  const selected = cameraZoomStrip.querySelector<HTMLButtonElement>("button.is-selected");
-  if (!selected) return;
-  window.requestAnimationFrame(() => {
-    const targetLeft = selected.offsetLeft + selected.offsetWidth / 2 - cameraZoomStrip.clientWidth / 2;
-    cameraZoomStrip.scrollTo({
-      left: Math.max(0, targetLeft),
-      behavior: "smooth"
-    });
-  });
-}
-
-function updateCameraZoomFromScroll() {
-  const nearest = getNearestZoomButton();
-  const value = Number(nearest?.dataset.zoom);
-  if (!Number.isFinite(value) || Math.abs(value - cameraZoom) < 0.05) return;
-  setCameraZoom(value, false);
-}
-
-function snapCameraZoomToNearest() {
-  const nearest = getNearestZoomButton();
-  const value = Number(nearest?.dataset.zoom);
-  if (!Number.isFinite(value)) return;
-  if (Math.abs(value - cameraZoom) >= 0.05) {
-    setCameraZoom(value, true);
-  } else {
-    centerSelectedCameraZoom();
-  }
-}
-
-function getNearestZoomButton(): HTMLButtonElement | undefined {
-  const buttons = Array.from(cameraZoomStrip.querySelectorAll<HTMLButtonElement>("button[data-zoom]"));
-  if (!buttons.length) return undefined;
-  const center = cameraZoomStrip.scrollLeft + cameraZoomStrip.clientWidth / 2;
-  return buttons.reduce((best, button) => {
-    const distance = Math.abs(button.offsetLeft + button.offsetWidth / 2 - center);
-    return distance < best.distance ? { button, distance } : best;
-  }, { button: buttons[0], distance: Number.POSITIVE_INFINITY }).button;
 }
 
 function updateCameraFacingState() {
@@ -1408,6 +1366,5 @@ syncCameraViewTransform();
 syncOrientationState();
 showCamera();
 window.setTimeout(centerSelectedCameraMode, 80);
-window.setTimeout(centerSelectedCameraZoom, 80);
 productRecordsLoadPromise = loadProductRecords();
 window.addEventListener("resize", syncOrientationState);
