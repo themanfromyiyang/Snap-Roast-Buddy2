@@ -15,6 +15,7 @@ export function generateRoastLayoutWithSkills(input: RoastLayoutInput, skills: L
 
   return {
     layoutType,
+    content,
     textPreview: renderTextPreview(layoutJson),
     layoutJson: input.returnLayoutJson === false ? { ...layoutJson, blocks: [] } : layoutJson,
     renderResult: {

@@ -392,6 +392,30 @@ select {
   border-bottom: 1px solid var(--line);
 }
 
+.printer-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 245, 0.72);
+}
+
+.printer-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.printer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.printer-actions button {
+  min-height: 38px;
+}
+
 .paper-stage {
   min-height: 620px;
   overflow: auto;
@@ -468,6 +492,20 @@ select {
   width: 384px;
   height: auto;
   min-height: var(--paper-height, 180px);
+}
+
+.p5-receipt-host {
+  display: block;
+  width: 384px;
+  min-height: var(--paper-height, 180px);
+  background: #fff;
+}
+
+.p5-receipt-host canvas {
+  display: block;
+  width: 384px !important;
+  height: auto !important;
+  background: #fff;
 }
 
 .text-details {
@@ -1848,6 +1886,22 @@ pre {
   cursor: zoom-in;
 }
 
+.result-placeholder {
+  cursor: default;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 10px, transparent 10px 20px),
+    rgba(255, 255, 255, 0.08);
+}
+
+.loading-ticket {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: #111;
+  font-weight: 900;
+  text-align: center;
+}
+
 .photo-info {
   display: flex;
   justify-content: space-between;
@@ -1981,6 +2035,17 @@ pre {
   display: block;
   width: 100%;
   height: auto;
+}
+
+.product-paper.p5-receipt-host {
+  width: calc(100% - 28px);
+}
+
+.product-paper.p5-receipt-host canvas {
+  position: relative;
+  z-index: 2;
+  width: 100% !important;
+  height: auto !important;
 }
 
 .text-paper {

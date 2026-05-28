@@ -1435,6 +1435,7 @@ function generateRoastLayoutWithSkills(input, skills = []) {
   const layoutJson = generateLayoutDocument(content, layoutType, printWidthDots, skills);
   return {
     layoutType,
+    content,
     textPreview: renderTextPreview(layoutJson),
     layoutJson: input.returnLayoutJson === false ? { ...layoutJson, blocks: [] } : layoutJson,
     renderResult: {

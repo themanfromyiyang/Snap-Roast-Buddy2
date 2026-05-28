@@ -159,6 +159,7 @@ export type SpacerBlock = {
 
 export type RoastLayoutOutput = {
   layoutType: LayoutType;
+  content?: ReceiptContent | BigTextContent | PixelExpressionContent;
   textPreview: string;
   layoutJson: LayoutDocument;
   renderResult?: {

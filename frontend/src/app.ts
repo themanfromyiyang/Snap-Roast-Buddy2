@@ -2,7 +2,6 @@
 import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
 import {
   createStandaloneMangaTicket,
-  createTicketHtmlWithManga,
   describeMode,
   layoutSkills,
   mapRoastLevel,
@@ -12,6 +11,15 @@ import {
   type ProductRoastLevel,
   type TextGenerationMode
 } from "./sharedProductFlow.js";
+import { updateReceiptPreview } from "./p5ReceiptRenderer.js";
+import {
+  connectPrinter,
+  disconnectPrinter,
+  feedDots,
+  isPrinterConnected,
+  printRasterFromElement,
+  printTestText
+} from "./lib/printer.js";
 
 type RoastApiResponse = {
   aiComment?: string;
@@ -35,6 +43,7 @@ type ClassificationResponse = {
 };
 
 type DoodleResponse = {
+  imageDataUrl?: string;
   imageUrl?: string;
   imageBase64?: string;
   prompt?: string;
@@ -93,8 +102,12 @@ const classifyButton = mustQuery<HTMLButtonElement>("#classifyButton");
 const generateButton = mustQuery<HTMLButtonElement>("#generateButton");
 const generateMangaButton = mustQuery<HTMLButtonElement>("#generateMangaButton");
 const testSupabaseButton = mustQuery<HTMLButtonElement>("#testSupabaseButton");
+const connectPrinterButton = mustQuery<HTMLButtonElement>("#connectPrinterButton");
+const feedPrinterButton = mustQuery<HTMLButtonElement>("#feedPrinterButton");
+const testPrintButton = mustQuery<HTMLButtonElement>("#testPrintButton");
+const printCurrentButton = mustQuery<HTMLButtonElement>("#printCurrentButton");
 const examplesEl = mustQuery<HTMLDivElement>("#examples");
-const receiptPaper = mustQuery<HTMLDivElement>("#receiptPaper");
+const receiptPaper = mustQuery<HTMLDivElement>("#print-preview");
 const textPreview = mustQuery<HTMLPreElement>("#textPreview");
 const layoutType = mustQuery<HTMLSpanElement>("#layoutType");
 const reason = mustQuery<HTMLParagraphElement>("#reason");
@@ -108,6 +121,7 @@ const classificationReason = mustQuery<HTMLParagraphElement>("#classificationRea
 const classificationStatus = mustQuery<HTMLParagraphElement>("#classificationStatus");
 const mangaStatus = mustQuery<HTMLParagraphElement>("#mangaStatus");
 const supabaseStatus = mustQuery<HTMLParagraphElement>("#supabaseStatus");
+const printerStatus = mustQuery<HTMLParagraphElement>("#printerStatus");
 
 let inputUpdateTimer = 0;
 let selectedImageUrl = "";
@@ -163,6 +177,10 @@ classifyButton.addEventListener("click", classifyDescription);
 generateButton.addEventListener("click", generateWithApi);
 generateMangaButton.addEventListener("click", generateMangaStep);
 testSupabaseButton.addEventListener("click", testSupabaseConnection);
+connectPrinterButton.addEventListener("click", togglePrinterConnection);
+feedPrinterButton.addEventListener("click", testPrinterFeed);
+testPrintButton.addEventListener("click", testPrinterText);
+printCurrentButton.addEventListener("click", printCurrentLayout);
 input.addEventListener("input", () => {
   resetGeneratedState();
   window.clearTimeout(inputUpdateTimer);
@@ -357,7 +375,7 @@ async function generateMangaImage(imagePayload: string): Promise<string> {
   const payload = (await response.json()) as DoodleResponse;
   if (!response.ok || payload.error) throw new Error(formatApiError(payload, "漫画生成失败。"));
 
-  const imageSrc = payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
+  const imageSrc = payload.imageDataUrl || payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
   if (!imageSrc) throw new Error("图像编辑模型没有返回图片。");
   return imageSrc;
 }
@@ -382,6 +400,79 @@ async function testSupabaseConnection() {
   }
 }
 
+async function togglePrinterConnection() {
+  if (isPrinterConnected()) {
+    disconnectPrinter();
+    setStepStatus(printerStatus, "未连接", "ready");
+    connectPrinterButton.textContent = "连接打印机";
+    return;
+  }
+
+  setBusy(connectPrinterButton, true, "正在连接");
+  setStepStatus(printerStatus, "正在连接 SnapPrinter-S3。", "loading");
+  try {
+    await connectPrinter();
+    setStepStatus(printerStatus, "已连接 SnapPrinter-S3。", "ready");
+    connectPrinterButton.textContent = "断开打印机";
+  } catch (error) {
+    setStepStatus(printerStatus, error instanceof Error ? error.message : "连接失败。", "error");
+    connectPrinterButton.textContent = "连接打印机";
+  } finally {
+    connectPrinterButton.disabled = false;
+  }
+}
+
+async function testPrinterFeed() {
+  if (!isPrinterConnected()) {
+    setStepStatus(printerStatus, "未连接打印机。", "error");
+    return;
+  }
+  setBusy(feedPrinterButton, true, "发送中");
+  setStepStatus(printerStatus, "正在发送进纸指令。", "loading");
+  try {
+    await feedDots(80);
+    setStepStatus(printerStatus, "测试进纸完成。", "ready");
+  } catch (error) {
+    setStepStatus(printerStatus, error instanceof Error ? error.message : "发送失败。", "error");
+  } finally {
+    setBusy(feedPrinterButton, false, "测试进纸");
+  }
+}
+
+async function testPrinterText() {
+  if (!isPrinterConnected()) {
+    setStepStatus(printerStatus, "未连接打印机。", "error");
+    return;
+  }
+  setBusy(testPrintButton, true, "打印中");
+  setStepStatus(printerStatus, "正在打印英文测试文字。", "loading");
+  try {
+    await printTestText();
+    setStepStatus(printerStatus, "测试文字打印完成。", "ready");
+  } catch (error) {
+    setStepStatus(printerStatus, error instanceof Error ? error.message : "打印失败。", "error");
+  } finally {
+    setBusy(testPrintButton, false, "测试文字");
+  }
+}
+
+async function printCurrentLayout() {
+  if (!isPrinterConnected()) {
+    setStepStatus(printerStatus, "未连接打印机。", "error");
+    return;
+  }
+  setBusy(printCurrentButton, true, "打印中");
+  setStepStatus(printerStatus, "正在把当前排版转换为 384 点黑白位图。", "loading");
+  try {
+    await printRasterFromElement(receiptPaper);
+    setStepStatus(printerStatus, "打印完成。", "ready");
+  } catch (error) {
+    setStepStatus(printerStatus, error instanceof Error ? error.message : "打印失败。", "error");
+  } finally {
+    setBusy(printCurrentButton, false, "打印当前排版");
+  }
+}
+
 function renderLocal() {
   if (mangaMode.value === "standalone" && latestMangaImageUrl) {
     renderStandaloneManga();
@@ -394,7 +485,7 @@ function renderLocal() {
       photoDescription: sourceDescription,
       generatedComment: latestAiComment,
       mode: modeToRoastMode(mode.value as TextGenerationMode, classifiedLayoutType),
-      roastLevel: roastLevel.value as RoastLevel,
+      roastLevel: mapRoastLevel(roastLevel.value as ProductRoastLevel),
       language: "zh",
       printWidthDots: 384,
       returnLayoutJson: true
@@ -402,13 +493,15 @@ function renderLocal() {
     layoutSkills
   );
 
-  const ticketHtml = createTicketHtmlWithManga(result.renderResult?.svg ?? "", latestMangaImageUrl, mangaMode.value as MangaMode);
-  receiptPaper.innerHTML = ticketHtml;
-  receiptPaper.style.setProperty("--paper-height", `${result.layoutJson.heightDots ?? 0}px`);
+  const previewMode = result.layoutType === "big_text" ? "big_text" : result.layoutType === "pixel_expression" ? "pixel_expression" : "receipt";
+  const canvasSize = updateReceiptPreview(receiptPaper, result.content, previewMode, roastLevel.value as ProductRoastLevel, {
+    mangaImageUrl: latestMangaImageUrl,
+    mangaMode: mangaMode.value as MangaMode
+  });
   textPreview.textContent = result.textPreview;
   layoutType.textContent = describeMode(result.layoutType);
   reason.textContent = result.reason;
-  heightReadout.textContent = `${result.layoutJson.widthDots}px x ${result.layoutJson.heightDots ?? "auto"}px`;
+  heightReadout.textContent = `${canvasSize.width}px x ${canvasSize.height}px`;
 }
 
 function renderStandaloneManga() {
@@ -507,6 +600,7 @@ setStepStatus(imageStatus, "请选择示例图或上传图片。", "ready");
 setStepStatus(classificationStatus, "等待三分类。", "ready");
 setStepStatus(mangaStatus, "漫画会直接由图片生成白底黑线结果，再按设置插入小票。", "ready");
 setStepStatus(supabaseStatus, "等待检测 Supabase。", "ready");
+setStepStatus(printerStatus, "未连接", "ready");
 setStatus("API 就绪。可以从图片分析开始，也可以直接编辑文字生成。", "ready");
 renderClassification();
 renderWorkflow();

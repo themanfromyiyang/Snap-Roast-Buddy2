@@ -1,6 +1,7 @@
 import { generateRoastLayoutWithSkills } from "../../packages/layout/src/generateRoastLayoutWithSkills.js";
 import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
 import { createStandaloneMangaTicket, createTicketHtmlWithManga, layoutSkills as sharedLayoutSkills } from "./sharedProductFlow.js";
+import { destroyReceiptPreviews, updateReceiptPreview } from "./p5ReceiptRenderer.js";
 
 type ProductLayoutType = "receipt" | "big_text" | "expression" | "sketch";
 type TriggerMode = "auto" | "manual";
@@ -20,14 +21,15 @@ type ProductSettings = {
 
 type PhotoRecord = {
   id: string;
-  originalImageUrl: string;
-  createdAt: string;
+  originalImageUrl?: string;
+  createdAt?: string;
   description?: string;
   layoutType: ProductLayoutType;
   generationMode: GenerationMode;
   roastLevel: ProductRoastLevel;
   sketchMode: SketchMode;
   ticketHtml?: string;
+  ticketContent?: unknown;
   ticketText?: string;
   sketchImageUrl?: string;
   caption?: string;
@@ -55,6 +57,7 @@ type RoastApiResponse = {
 };
 
 type DoodleResponse = {
+  imageDataUrl?: string;
   imageUrl?: string;
   imageBase64?: string;
   error?: string;
@@ -157,7 +160,7 @@ let cameraStream: MediaStream | undefined;
 let cameraFacingMode: "user" | "environment" = "environment";
 let cameraZoom = 1;
 let cameraUsesHardwareZoom = false;
-let records: PhotoRecord[] = [];
+let records: Array<PhotoRecord | undefined> = [];
 let currentRecordIndex = 0;
 let isGenerating = false;
 let messageTimer = 0;
@@ -173,7 +176,7 @@ let funMessageIndex = 0;
 let regenerateDraftSettings: ProductSettings = { ...settings };
 let productRecordsLoadPromise: Promise<void> | undefined;
 let productRecordsTotal = 0;
-let isLoadingMoreRecords = false;
+const loadingRecordPages = new Set<number>();
 let usingLocalRecordStore = false;
 let generationPhases: GenerationPhase[] = [];
 let activeGenerationPhase: GenerationPhase | undefined;
@@ -625,8 +628,7 @@ async function startGenerationFromSelected() {
   try {
     const record = await generateSnapRoastResult(selectedImageUrl, settings);
     const savedRecord = await saveProductRecord(record);
-    records = [savedRecord, ...records.filter((item) => item.id !== savedRecord.id)];
-    productRecordsTotal = Math.max(productRecordsTotal, records.length);
+    prependLoadedRecord(savedRecord);
     renderLatestThumb();
     showResult(0);
   } catch (error) {
@@ -641,18 +643,25 @@ async function startGenerationFromSelected() {
 
 async function regenerateCurrent() {
   const current = records[currentRecordIndex];
-  if (!current || isGenerating) return;
+  if (!isHydratedRecord(current) || isGenerating) return;
+  const replaceIndex = currentRecordIndex;
   selectedImageUrl = current.originalImageUrl;
   isGenerating = true;
   showGenerating(selectedImageUrl);
 
   try {
     const record = await generateSnapRoastResult(selectedImageUrl, settings);
-    const savedRecord = await saveProductRecord(record);
-    records = [savedRecord, ...records.filter((item) => item.id !== savedRecord.id)];
-    productRecordsTotal = Math.max(productRecordsTotal, records.length);
+    const replacementRecord: PhotoRecord = {
+      ...record,
+      id: current.id,
+      createdAt: current.createdAt ?? record.createdAt,
+      originalImageUrl: current.originalImageUrl
+    };
+    const savedRecord = await saveProductRecord(replacementRecord);
+    records[replaceIndex] = savedRecord;
+    currentRecordIndex = replaceIndex;
     renderLatestThumb();
-    showResult(0);
+    showResult(replaceIndex);
   } catch (error) {
     showResult(currentRecordIndex);
     cameraHint.textContent = error instanceof Error ? error.message : "重新生成失败。";
@@ -694,8 +703,9 @@ async function deleteCurrentRecord() {
   } catch {
     usingLocalRecordStore = true;
   }
-  records = records.filter((item) => item.id !== current.id);
+  records = records.filter((item) => item?.id !== current.id);
   productRecordsTotal = Math.max(0, productRecordsTotal - 1);
+  if (records.length > productRecordsTotal) records.length = productRecordsTotal;
   renderLatestThumb();
   if (records.length === 0) {
     showCamera();
@@ -768,6 +778,7 @@ async function generateSnapRoastResult(imageUrl: string, productSettings: Produc
     roastLevel: productSettings.roastLevel,
     sketchMode: shouldAddSketch ? productSettings.sketchMode : "none",
     ticketHtml: layoutResult.renderResult?.svg,
+    ticketContent: layoutResult.content,
     ticketText: layoutResult.textPreview,
     sketchImageUrl,
     caption: roast.aiComment
@@ -804,7 +815,7 @@ async function generateRoast(description: string, layoutType: RoastMode, roastLe
 
 async function generateSketch(imageUrl: string): Promise<string> {
   const payload = await postJson<DoodleResponse>("/api/generate-doodle", { imageDataUrl: imageUrl });
-  const result = payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
+  const result = payload.imageDataUrl || payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
   if (!result) throw new Error("漫画模型没有返回图片。");
   return result;
 }
@@ -940,7 +951,8 @@ function attachPrintButtonHandlers(): void {
 
 function renderCurrentRecord() {
   const record = records[currentRecordIndex];
-  if (!record) {
+  const hydratedRecord = isHydratedRecord(record) ? record : undefined;
+  if (records.length === 0) {
     recordTime.textContent = "暂无照片";
     recordMode.textContent = "等待生成";
     recordCounter.textContent = "0 / 0";
@@ -953,25 +965,34 @@ function renderCurrentRecord() {
     return;
   }
 
-  resultOriginalImage.src = record.originalImageUrl;
-  regenerateButton.disabled = false;
-  deleteRecordButton.disabled = false;
-  printButton.disabled = !hasPrintableText(record);
+if (hydratedRecord) resultOriginalImage.src = hydratedRecord.originalImageUrl;
+
+regenerateButton.disabled = !hydratedRecord;
+deleteRecordButton.disabled = !record;
+printButton.disabled = !hasPrintableText(hydratedRecord || record);
   fixedPrinterSlot.hidden = false;
-  updateResultMeta(record);
+  updateResultMeta(hydratedRecord ?? record);
   renderAlbumSlides();
   scrollAlbumToIndex(currentRecordIndex, "auto");
+  void loadProductRecordWindow(currentRecordIndex);
   resultScroller.scrollTop = 0;
 }
 
-function updateResultMeta(record: PhotoRecord) {
-  resultOriginalImage.src = record.originalImageUrl;
-  recordTime.textContent = formatTime(record.createdAt);
-  recordMode.textContent = modeLabel(record);
-  recordCounter.textContent = `${currentRecordIndex + 1} / ${records.length}`;
+function updateResultMeta(record: PhotoRecord | undefined) {
+  if (isHydratedRecord(record)) {
+    resultOriginalImage.src = record.originalImageUrl;
+    recordTime.textContent = formatTime(record.createdAt ?? new Date().toISOString());
+    recordMode.textContent = modeLabel(record);
+  } else {
+    resultOriginalImage.removeAttribute("src");
+    recordTime.textContent = "正在读取";
+    recordMode.textContent = "加载中";
+  }
+  recordCounter.textContent = `${Math.min(currentRecordIndex + 1, Math.max(records.length, 1))} / ${productRecordsTotal || records.length}`;
 }
 
 function renderAlbumSlides() {
+  destroyReceiptPreviews(imageCarousel);
   imageCarousel.innerHTML = "";
   ticketCarousel.innerHTML = "";
   ticketLongPreview.innerHTML = "";
@@ -990,23 +1011,35 @@ function renderAlbumSlides() {
   records.forEach((record, index) => {
     const albumSlide = document.createElement("article");
     albumSlide.className = "album-slide album-combined-slide";
+    const shouldHydrate = shouldHydrateAlbumSlide(index);
+    const hydratedRecord = isHydratedRecord(record) ? record : undefined;
 
-    const img = document.createElement("img");
-    img.className = "result-original";
-    img.src = record.originalImageUrl;
-    img.alt = "原始照片";
-    img.addEventListener("click", () => {
-      currentRecordIndex = index;
-      updateResultMeta(record);
-      openImageLightbox();
-    });
+    const img = hydratedRecord && shouldHydrate ? document.createElement("img") : document.createElement("div");
+    img.className = hydratedRecord && shouldHydrate ? "result-original" : "result-original result-placeholder";
+    if (hydratedRecord && shouldHydrate) {
+      (img as HTMLImageElement).src = hydratedRecord.originalImageUrl;
+      (img as HTMLImageElement).alt = "原始照片";
+    }
+    if (hydratedRecord && shouldHydrate) {
+      img.addEventListener("click", () => {
+        currentRecordIndex = index;
+        updateResultMeta(hydratedRecord);
+        openImageLightbox();
+      });
+    } else {
+      img.setAttribute("aria-label", "正在读取照片");
+    }
 
     const fixedMiddleSpace = document.createElement("div");
     fixedMiddleSpace.className = "album-fixed-middle-space";
     fixedMiddleSpace.setAttribute("aria-hidden", "true");
-    albumSlide.append(img, fixedMiddleSpace, createTicketBody(record));
+    albumSlide.append(img, fixedMiddleSpace, hydratedRecord && shouldHydrate ? createTicketBody(hydratedRecord) : createLoadingTicketBody(index, Boolean(record)));
     imageCarousel.append(albumSlide);
   });
+}
+
+function shouldHydrateAlbumSlide(index: number) {
+  return Math.abs(index - currentRecordIndex) <= 1;
 }
 
 function openDeleteConfirmDialog() {
@@ -1029,7 +1062,15 @@ function createTicketBody(record: PhotoRecord): HTMLElement {
   const body = document.createElement("div");
   body.className = "ticket-long-preview";
 
-  if (record.ticketHtml) {
+  if (record.ticketContent) {
+    const shell = document.createElement("div");
+    shell.className = "product-paper";
+    body.append(shell);
+    updateReceiptPreview(shell, record.ticketContent, record.layoutType === "expression" ? "face" : record.layoutType === "sketch" ? "simple" : record.layoutType, record.roastLevel, {
+      mangaImageUrl: record.sketchImageUrl,
+      mangaMode: record.sketchMode
+    });
+  } else if (record.ticketHtml) {
     const shell = document.createElement("div");
     shell.className = "product-paper";
     shell.innerHTML = createTicketHtmlWithManga(record.ticketHtml, record.sketchImageUrl, record.sketchMode);
@@ -1053,6 +1094,16 @@ function createTicketBody(record: PhotoRecord): HTMLElement {
     body.append(empty);
   }
 
+  return body;
+}
+
+function createLoadingTicketBody(index: number, isLoaded = false): HTMLElement {
+  const body = document.createElement("div");
+  body.className = "ticket-long-preview";
+  const paper = document.createElement("div");
+  paper.className = "product-paper text-paper loading-ticket";
+  paper.textContent = isLoaded ? `第 ${index + 1} 张小票已待命` : `正在读取第 ${index + 1} 张小票...`;
+  body.append(paper);
   return body;
 }
 
@@ -1113,7 +1164,9 @@ function shiftRecord(offset: number) {
   const next = (currentRecordIndex + offset + records.length) % records.length;
   currentRecordIndex = next;
   updateResultMeta(records[currentRecordIndex]);
+  renderAlbumSlides();
   scrollAlbumToIndex(currentRecordIndex, "smooth");
+  void loadProductRecordWindow(currentRecordIndex);
 }
 
 function syncAlbumScroll(source: HTMLDivElement) {
@@ -1130,7 +1183,7 @@ function updateAlbumMetaFromScroll(source: HTMLDivElement) {
   visibleAlbumIndex = index;
   currentRecordIndex = index;
   updateResultMeta(records[index]);
-  void loadMoreProductRecordsIfNeeded(index);
+  void loadProductRecordWindow(index);
 }
 
 function snapAlbumToNearest(source: HTMLDivElement) {
@@ -1139,8 +1192,9 @@ function snapAlbumToNearest(source: HTMLDivElement) {
   visibleAlbumIndex = index;
   currentRecordIndex = index;
   updateResultMeta(records[index]);
+  renderAlbumSlides();
   scrollAlbumToIndex(index, "smooth");
-  void loadMoreProductRecordsIfNeeded(index);
+  void loadProductRecordWindow(index);
 }
 
 function scrollAlbumToIndex(index: number, behavior: ScrollBehavior = "smooth") {
@@ -1155,7 +1209,7 @@ function scrollAlbumToIndex(index: number, behavior: ScrollBehavior = "smooth") 
 
 function openImageLightbox() {
   const current = records[currentRecordIndex];
-  if (!current) return;
+  if (!isHydratedRecord(current)) return;
   lightboxImage.src = current.originalImageUrl;
   imageLightbox.hidden = false;
 }
@@ -1233,65 +1287,91 @@ function renderRegenerateSettings() {
 }
 
 function renderLatestThumb() {
-  const latest = records[0];
+  const latest = isHydratedRecord(records[0]) ? records[0] : undefined;
   latestThumb.style.backgroundImage = latest ? `url("${latest.originalImageUrl}")` : "";
   latestThumb.classList.toggle("has-image", Boolean(latest));
 }
 
 async function loadProductRecords() {
   try {
-    const payload = await getJson<ProductRecordsResponse>(`/api/product-records?offset=0&limit=${productRecordsPageSize}`);
-    const remoteRecords = [...(payload.records ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    const payload = await getJson<ProductRecordsResponse>(`/api/product-records?offset=0&limit=${productRecordsPageSize}&view=summary`);
+    const remoteRecords = [...(payload.records ?? [])].sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
     const localRecords = await readCachedProductRecords();
-    const mergedRecords = mergeRecords(localRecords, remoteRecords);
-    usingLocalRecordStore = localRecords.length > 0 || remoteRecords.length === 0;
-    records = mergedRecords.slice(0, productRecordsPageSize);
-    productRecordsTotal = Math.max(payload.total ?? 0, mergedRecords.length);
-    if (remoteRecords.length) await writeCachedProductRecords(mergedRecords);
+    usingLocalRecordStore = remoteRecords.length === 0 && localRecords.length > 0;
+    if (usingLocalRecordStore) {
+      productRecordsTotal = localRecords.length;
+      records = [...localRecords];
+    } else {
+      productRecordsTotal = Math.max(payload.total ?? 0, remoteRecords.length);
+      records = createRecordSlots(productRecordsTotal);
+      placeLoadedRecords(0, remoteRecords, productRecordsTotal);
+    }
     renderLatestThumb();
+    void loadProductRecordAtIndex(0);
     if (!resultScreen.hidden) renderCurrentRecord();
   } catch {
     usingLocalRecordStore = true;
     const localRecords = await readCachedProductRecords();
-    records = localRecords.slice(0, productRecordsPageSize);
     productRecordsTotal = localRecords.length;
+    records = [...localRecords];
     renderLatestThumb();
     if (!resultScreen.hidden) renderCurrentRecord();
   }
 }
 
-async function loadMoreProductRecordsIfNeeded(index: number) {
-  if (isLoadingMoreRecords || records.length >= productRecordsTotal || index < records.length - 2) return;
-  isLoadingMoreRecords = true;
+async function loadProductRecordAtIndex(index: number) {
+  if (usingLocalRecordStore || isHydratedRecord(records[index]) || index < 0) return;
+  const pageOffset = Math.floor(index / productRecordsPageSize) * productRecordsPageSize;
+  if (loadingRecordPages.has(pageOffset)) return;
+  loadingRecordPages.add(pageOffset);
   try {
-    if (usingLocalRecordStore) {
-      const localRecords = await readCachedProductRecords();
-      const nextRecords = localRecords.slice(records.length, records.length + productRecordsPageSize);
-      records = [...records, ...nextRecords];
-      productRecordsTotal = localRecords.length;
-      if (!resultScreen.hidden) {
-        renderAlbumSlides();
-        scrollAlbumToIndex(currentRecordIndex, "auto");
-      }
-      return;
-    }
-    const payload = await getJson<ProductRecordsResponse>(
-      `/api/product-records?offset=${records.length}&limit=${productRecordsPageSize}`
-    );
+    const payload = await getJson<ProductRecordsResponse>(`/api/product-records?offset=${pageOffset}&limit=${productRecordsPageSize}&view=full`);
     const nextRecords = payload.records ?? [];
-    productRecordsTotal = payload.total ?? productRecordsTotal;
-    const seen = new Set(records.map((record) => record.id));
-    records = [...records, ...nextRecords.filter((record) => !seen.has(record.id))].sort(
-      (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
-    );
+    const total = Math.max(payload.total ?? productRecordsTotal, pageOffset + nextRecords.length);
+    if (total !== productRecordsTotal || records.length !== total) {
+      productRecordsTotal = total;
+      records.length = total;
+    }
+    placeLoadedRecords(pageOffset, nextRecords, productRecordsTotal);
+    if (nextRecords.length) await writeCachedProductRecords(mergeRecords(await readCachedProductRecords(), nextRecords));
     renderLatestThumb();
     if (!resultScreen.hidden) {
       renderAlbumSlides();
+      updateResultMeta(records[currentRecordIndex]);
       scrollAlbumToIndex(currentRecordIndex, "auto");
     }
   } finally {
-    isLoadingMoreRecords = false;
+    loadingRecordPages.delete(pageOffset);
   }
+}
+
+async function loadProductRecordWindow(index: number) {
+  await Promise.all([index - 1, index, index + 1].filter((item) => item >= 0 && item < records.length).map((item) => loadProductRecordAtIndex(item)));
+}
+
+function createRecordSlots(total: number): Array<PhotoRecord | undefined> {
+  return Array.from({ length: Math.max(0, total) }, () => undefined);
+}
+
+function placeLoadedRecords(offset: number, nextRecords: PhotoRecord[], total: number) {
+  if (records.length !== total) records.length = total;
+  nextRecords.forEach((record, index) => {
+    records[offset + index] = { ...records[offset + index], ...record };
+  });
+}
+
+function prependLoadedRecord(record: PhotoRecord) {
+  records = [record, ...records.filter((item) => item?.id !== record.id)];
+  productRecordsTotal = Math.max(productRecordsTotal + 1, records.filter(Boolean).length);
+  records.length = productRecordsTotal;
+}
+
+function isHydratedRecord(record: PhotoRecord | undefined): record is PhotoRecord & { originalImageUrl: string } {
+  return Boolean(record?.originalImageUrl);
+}
+
+function recordTimestamp(record: PhotoRecord) {
+  return Date.parse(record.createdAt ?? "") || 0;
 }
 
 async function ensureProductRecordsLoaded() {
@@ -1354,7 +1434,7 @@ async function readIndexedProductRecords(): Promise<PhotoRecord[]> {
         resolve(
           (request.result as PhotoRecord[])
             .filter((record) => record?.id && record.originalImageUrl && record.createdAt)
-            .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+            .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))
         );
       });
       request.addEventListener("error", () => reject(request.error ?? new Error("IndexedDB read failed.")));
@@ -1371,7 +1451,7 @@ async function writeIndexedProductRecords(nextRecords: PhotoRecord[]): Promise<v
     const store = transaction.objectStore(productRecordsStoreName);
     store.clear();
     nextRecords
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .sort((a, b) => recordTimestamp(b) - recordTimestamp(a))
       .slice(0, 80)
       .forEach((record) => store.put(record));
     transaction.addEventListener("complete", () => resolve());
@@ -1396,7 +1476,7 @@ function mergeRecords(...recordGroups: PhotoRecord[][]): PhotoRecord[] {
   recordGroups.flat().forEach((record) => {
     if (record?.id) byId.set(record.id, record);
   });
-  return Array.from(byId.values()).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  return Array.from(byId.values()).sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
 }
 
 function openProductRecordsDatabase(): Promise<IDBDatabase> {
@@ -1425,14 +1505,14 @@ function readLocalProductRecords(): PhotoRecord[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((record) => record?.id && record.originalImageUrl && record.createdAt)
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      .sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
   } catch {
     return [];
   }
 }
 
 function writeLocalProductRecords(nextRecords: PhotoRecord[]) {
-  const sortedRecords = [...nextRecords].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const sortedRecords = [...nextRecords].sort((a, b) => recordTimestamp(b) - recordTimestamp(a));
   const recordCaps = [24, 12, 6, 3, 1];
   for (const cap of recordCaps) {
     try {

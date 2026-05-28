@@ -178,9 +178,11 @@ export async function handleGenerateDoodle(req, res) {
 
     const data = await completion.json();
     const imageResult = extractGeneratedImage(data);
+    const imageDataUrl = imageResult.base64 ? "" : await downloadImageAsDataUrl(imageResult.url);
 
     return sendJson(res, 200, {
-      imageUrl: imageResult.url,
+      imageUrl: imageDataUrl ? "" : imageResult.url,
+      imageDataUrl,
       imageBase64: imageResult.base64,
       prompt,
       rawContent: data
@@ -240,22 +242,42 @@ export async function handleListProductRecords(req, res) {
     const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
     const limitParam = Number(url.searchParams.get("limit") ?? 0) || 0;
     const limit = Math.max(0, Math.min(limitParam || 24, 24));
-    const query = new URLSearchParams({
-      select: "record",
+    const view = cleanText(url.searchParams.get("view") || "full");
+    const listQuery = new URLSearchParams({
+      select: view === "summary" ? "id,created_at,layout_type,generation_mode,roast_level,sketch_mode,caption" : "record,original_image_url,ticket_html,ticket_text,sketch_image_url",
       order: "created_at.desc",
       offset: String(offset),
       limit: String(limit)
     });
-    const response = await fetch(`${supabaseRestBaseUrl()}/${supabaseRecordsTable}?${query}`, {
-      headers: supabaseHeaders({ Prefer: "count=exact" })
+    const countQuery = new URLSearchParams({
+      select: "id",
+      order: "created_at.desc",
+      limit: "1"
     });
 
+    const [response, countResponse] = await Promise.all([
+      fetch(`${supabaseRestBaseUrl()}/${supabaseRecordsTable}?${listQuery}`, {
+        headers: supabaseHeaders({ Prefer: "count=exact" })
+      }),
+      fetch(`${supabaseRestBaseUrl()}/${supabaseRecordsTable}?${countQuery}`, {
+        method: "HEAD",
+        headers: supabaseHeaders({ Prefer: "count=exact" })
+      })
+    ]);
+
     if (!response.ok) return sendSupabaseError(res, response, "Failed to list product records.");
+    if (!countResponse.ok) return sendSupabaseError(res, countResponse, "Failed to count product records.");
 
     const rows = await response.json();
-    const total = parseTotalCount(response.headers.get("content-range"), Array.isArray(rows) ? rows.length : 0);
+    const fallbackTotal = Math.max(offset + (Array.isArray(rows) ? rows.length : 0), Array.isArray(rows) ? rows.length : 0);
+    const total = parseTotalCount(countResponse.headers.get("content-range"), parseTotalCount(response.headers.get("content-range"), fallbackTotal));
+    const records = Array.isArray(rows)
+      ? view === "summary"
+        ? rows.map((row) => summaryRecordFromRow(row)).filter(Boolean)
+        : (await Promise.all(rows.map((row) => normalizeRecordImages(fullRecordFromRow(row))))).filter(Boolean)
+      : [];
     return sendJson(res, 200, {
-      records: Array.isArray(rows) ? rows.map((row) => row.record).filter(Boolean) : [],
+      records,
       total,
       offset,
       limit
@@ -284,7 +306,7 @@ export async function handleSaveProductRecord(req, res) {
     if (!response.ok) return sendSupabaseError(res, response, "Failed to save product record.");
 
     const rows = await response.json();
-    return sendJson(res, 200, { record: rows?.[0]?.record ?? record });
+    return sendJson(res, 200, { record: (await normalizeRecordImages(fullRecordFromRow(rows?.[0]))) ?? record });
   } catch (error) {
     return sendServerError(res, error);
   }
@@ -486,11 +508,81 @@ function extractGeneratedImage(data) {
   return { url: "" };
 }
 
+async function downloadImageAsDataUrl(imageUrl) {
+  if (!imageUrl || !String(imageUrl).startsWith("http")) return "";
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) return "";
+    const contentType = response.headers.get("content-type") || "image/png";
+    if (!contentType.startsWith("image/")) return "";
+    const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength > 8 * 1024 * 1024) return "";
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    return `data:${contentType};base64,${base64}`;
+  } catch {
+    return "";
+  }
+}
+
+async function normalizeRecordImages(record) {
+  if (!record) return undefined;
+  if (record.sketchImageUrl?.startsWith("http")) {
+    const sketchDataUrl = await downloadImageAsDataUrl(record.sketchImageUrl);
+    if (sketchDataUrl) record.sketchImageUrl = sketchDataUrl;
+  }
+  return record;
+}
+
 function isValidProductRecord(record) {
   return Boolean(record?.id && record?.originalImageUrl && record?.createdAt);
 }
 
+function summaryRecordFromRow(row) {
+  if (!row?.id) return undefined;
+  return {
+    id: cleanText(row.id),
+    createdAt: row.created_at,
+    layoutType: cleanText(row.layout_type),
+    generationMode: cleanText(row.generation_mode),
+    roastLevel: cleanText(row.roast_level),
+    sketchMode: cleanText(row.sketch_mode),
+    caption: row.caption ?? undefined
+  };
+}
+
+function fullRecordFromRow(row) {
+  if (!row) return undefined;
+  const record = row.record && typeof row.record === "object" ? row.record : {};
+  return {
+    ...record,
+    id: cleanText(record.id || row.id),
+    originalImageUrl: record.originalImageUrl || row.original_image_url,
+    createdAt: record.createdAt || row.created_at,
+    description: record.description ?? row.description ?? undefined,
+    layoutType: cleanText(record.layoutType || row.layout_type),
+    generationMode: cleanText(record.generationMode || row.generation_mode),
+    roastLevel: cleanText(record.roastLevel || row.roast_level),
+    sketchMode: cleanText(record.sketchMode || row.sketch_mode),
+    ticketHtml: record.ticketHtml ?? row.ticket_html ?? undefined,
+    ticketText: record.ticketText ?? row.ticket_text ?? undefined,
+    sketchImageUrl: record.sketchImageUrl ?? row.sketch_image_url ?? undefined,
+    caption: record.caption ?? row.caption ?? undefined
+  };
+}
+
 function toProductRecordRow(record) {
+  const compactRecord = {
+    id: cleanText(record.id),
+    createdAt: record.createdAt,
+    description: cleanText(record.description),
+    layoutType: cleanText(record.layoutType),
+    generationMode: cleanText(record.generationMode),
+    roastLevel: cleanText(record.roastLevel),
+    sketchMode: cleanText(record.sketchMode),
+    ticketContent: record.ticketContent ?? null,
+    caption: record.caption ?? null
+  };
+
   return {
     id: cleanText(record.id),
     original_image_url: cleanText(record.originalImageUrl),
@@ -504,7 +596,7 @@ function toProductRecordRow(record) {
     ticket_text: record.ticketText ?? null,
     sketch_image_url: record.sketchImageUrl ?? null,
     caption: record.caption ?? null,
-    record
+    record: compactRecord
   };
 }
 

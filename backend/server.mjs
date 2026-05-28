@@ -10,6 +10,9 @@ const {
   handleDebugPrompts,
   handleDebugSkills,
   handleGenerateDoodle,
+  handleDeleteProductRecord: handleSupabaseDeleteProductRecord,
+  handleListProductRecords: handleSupabaseListProductRecords,
+  handleSaveProductRecord: handleSupabaseSaveProductRecord,
   handleRoast,
   handleSupabaseHealth
 } = await import("../api/_shared.mjs");
@@ -35,10 +38,10 @@ const server = createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/api/classify-layout") return handleClassifyLayout(request, response);
   if (request.method === "POST" && url.pathname === "/api/roast") return handleRoast(request, response);
   if (request.method === "POST" && url.pathname === "/api/generate-doodle") return handleGenerateDoodle(request, response);
-  if (request.method === "GET" && url.pathname === "/api/product-records") return handleListProductRecords(url, response);
-  if (request.method === "POST" && url.pathname === "/api/product-records") return handleSaveProductRecord(request, response);
+  if (request.method === "GET" && url.pathname === "/api/product-records") return handleSupabaseListProductRecords(request, response);
+  if (request.method === "POST" && url.pathname === "/api/product-records") return handleSupabaseSaveProductRecord(request, response);
   if (request.method === "DELETE" && url.pathname.startsWith("/api/product-records/")) {
-    return handleDeleteProductRecord(url.pathname.split("/").pop() ?? "", response);
+    return handleSupabaseDeleteProductRecord(request, response);
   }
   if (request.method === "GET" && url.pathname === "/api/debug/prompts") return handleDebugPrompts(request, response);
   if (request.method === "GET" && url.pathname === "/api/debug/skills") return handleDebugSkills(request, response);
