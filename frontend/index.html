@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>拍立怼 Snap Roast Buddy</title>
     <link rel="stylesheet" href="./styles.css" />
-    <!-- UTF-8 → GBK 编码（codepage 936），用于 ESP32 打印按钮把中文文本透传到打印机 -->
-    <script src="https://cdn.jsdelivr.net/npm/codepage@1.15.0/dist/cptable.full.js"></script>
+    <!-- UTF-8 → GBK 编码（codepage 936），用于 ESP32 打印按钮把中文文本透传到打印机
+         本地托管避免 CDN 在国内被墙；先加载码表数据，再加载 utils -->
+    <script src="./vendor/cp936.js"></script>
+    <script src="./vendor/cputils.js"></script>
   </head>
   <body class="product-body">
     <main class="product-app" aria-label="Snap Roast Buddy 产品模式">

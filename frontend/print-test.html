@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ESP32 打印验证 · Snap Roast Buddy</title>
+    <!-- SheetJS codepage 库：浏览器没原生 GBK 编码器，靠它把 UTF-8 文本转 GBK 双字节
+         本地托管避免国内 CDN 不稳；先加载码表数据，再加载 utils -->
+    <script src="./vendor/cp936.js"></script>
+    <script src="./vendor/cputils.js"></script>
     <style>
       :root { color-scheme: light; }
       * { box-sizing: border-box; }
@@ -79,6 +83,7 @@
       <p class="sub">
         手机开热点 → ESP32 连上 → 用本页面把文本发给 ESP32 → 看串口和打印机出纸。
         本页面用顶层跳转触发 GET，能从 <code>https://</code> 站点直接调 ESP32 的 HTTP 接口。
+        发送前自动 <b>UTF-8 → GBK</b> 转码（codepage 936），ESP32 端 FS &amp; 进入中文模式后透传给打印机。
       </p>
 
       <section class="card">
@@ -183,6 +188,22 @@ WiFi 直发验证 OK
           "扣 1 留念";
       });
 
+      // UTF-8 → GBK（codepage 936）→ %XX%XX 形式的 URL 编码字节串
+      // 用 cptable.utils.encode(936, text) 拿到 GBK 字节数组
+      // 再把每个字节手动 %hex 编码（不能用 encodeURIComponent，它会按 UTF-8 处理）
+      function encodeTextAsGbkPercent(text) {
+        if (typeof cptable === "undefined" || !cptable.utils) {
+          throw new Error("GBK 编码库 (cptable) 加载失败，检查 CDN 是否被拦截");
+        }
+        const bytes = cptable.utils.encode(936, text);
+        let result = "";
+        for (let i = 0; i < bytes.length; i++) {
+          const b = bytes[i] & 0xff;
+          result += "%" + b.toString(16).padStart(2, "0").toUpperCase();
+        }
+        return { encoded: result, byteLength: bytes.length };
+      }
+
       $("sendBtn").addEventListener("click", () => {
         const ip = normalizeIp(ipInput.value);
         const text = textInput.value;
@@ -190,17 +211,24 @@ WiFi 直发验证 OK
         if (!text) return setStatus("内容不能为空。");
         if (ip) localStorage.setItem(STORAGE_KEY, ip);
 
+        let encoded, byteLength;
+        try {
+          ({ encoded, byteLength } = encodeTextAsGbkPercent(text));
+        } catch (err) {
+          return setStatus("✗ " + err.message);
+        }
+
         // GET URL 长度上限：Chrome ~2MB；iOS Safari ~80KB。
-        // 普通小票文本 < 2KB，完全够用。
-        const url = "http://" + ip + "/print?text=" + encodeURIComponent(text);
+        // GBK 后字节数 ≈ 中文字符数 * 2 + ASCII 字符数 * 1，普通小票远低于上限。
+        const url = "http://" + ip + "/print?text=" + encoded;
         setStatus(
-          "即将跳转到 ESP32：\n" + url +
+          "已 GBK 编码：" + text.length + " 个字符 → " + byteLength + " 字节\n" +
+          "即将跳转到 ESP32：\n" + url.slice(0, 120) + (url.length > 120 ? "…" : "") +
           "\n\n如果跳转后看到“✅ 可打印”页面 = 验证成功。\n按浏览器返回键回到本页面。"
         );
-        // 留 200ms 让用户看到 status，再跳转
         setTimeout(() => {
           window.location.href = url;
-        }, 200);
+        }, 250);
       });
     </script>
   </body>
