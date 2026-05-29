@@ -864,6 +864,7 @@ function askForEsp32Ip(current: string): string {
   return normalized;
 }
 
+// imageCarousel 里每条记录对应一个 .album-slide；.product-paper 是当前 slide 的小票纸面外壳
 function getCurrentTicketElement(): HTMLElement | null {
   const slides = imageCarousel.querySelectorAll<HTMLElement>(".album-slide");
   const currentSlide = slides[currentRecordIndex];
