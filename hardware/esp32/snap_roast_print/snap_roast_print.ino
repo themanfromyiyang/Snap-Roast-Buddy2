@@ -169,6 +169,41 @@ static size_t streamBase64ToPrinter(const String& b64) {
   return outBytes;
 }
 
+// ---- GET /print-bridge：HTTPS 页面跳到这里，URL hash 里带 base64 ----
+// 这一页是 HTTP origin，可以同源 fetch POST 到 /print-raster，绕开浏览器
+// 对 HTTPS→HTTP form POST 把 body 吞掉的 mixed-content 策略。
+static void handlePrintBridge() {
+  sendCors();
+  String html;
+  html.reserve(2048);
+  html += "<!doctype html><html lang=\"zh-CN\"><head>";
+  html += "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
+  html += "<title>打印中…</title><style>";
+  html += "body{font-family:-apple-system,'PingFang SC',sans-serif;padding:24px;max-width:520px;margin:0 auto;background:#f7f7f7;text-align:center}";
+  html += "h1{margin:8px 0}.status{color:#666;margin-top:16px;font-size:14px}.err{color:#c00}";
+  html += "a{display:inline-block;margin-top:18px;color:#06f}";
+  html += "</style></head><body>";
+  html += "<h1>正在传位图给打印机…</h1>";
+  html += "<div id=\"status\" class=\"status\">准备中</div>";
+  html += "<script>";
+  html += "(async()=>{";
+  html += "const s=document.getElementById('status');";
+  html += "const raw=location.hash.slice(1);";
+  html += "if(!raw){s.textContent='错误：URL 没有 hash 数据';s.classList.add('err');return;}";
+  html += "const b64=decodeURIComponent(raw);";
+  html += "s.textContent='发往 ESP32 ('+b64.length+' 字符 base64)…';";
+  html += "try{";
+  html += "const r=await fetch('/print-raster',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(b64)});";
+  html += "const t=await r.text();";
+  html += "document.open();document.write(t);document.close();";
+  html += "}catch(e){s.textContent='出错: '+e.message;s.classList.add('err');}";
+  html += "})();";
+  html += "</script>";
+  html += "<a href=\"javascript:history.back()\">← 返回</a>";
+  html += "</body></html>";
+  server.send(200, "text/html; charset=utf-8", html);
+}
+
 // ---- POST /print-raster：form 字段 data=<base64(ESC/POS raster 字节流)> ----
 static void handlePrintRaster() {
   sendCors();
@@ -262,6 +297,7 @@ void setup() {
   server.on("/print", HTTP_OPTIONS, handleOptions);
   server.on("/print-raster", HTTP_POST,    handlePrintRaster);
   server.on("/print-raster", HTTP_OPTIONS, handleOptions);
+  server.on("/print-bridge", HTTP_GET,     handlePrintBridge);
   server.onNotFound([]() {
     sendCors();
     server.send(404, "text/plain", "Not found");

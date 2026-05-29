@@ -878,31 +878,17 @@ async function buildRasterBase64(element: HTMLElement): Promise<string> {
 }
 
 function submitRasterToEsp32(ip: string, base64: string): void {
-  // 顶层 form POST，浏览器会弹一次警告，用户确认后跳转到 ESP32 的"已打印"页。
+  // 走 HTTP 桥接页：HTTPS→HTTP form POST 现代浏览器会把 body 吞掉（实测），
+  // 改成 HTTPS→HTTP 顶层 navigation 把 base64 放 URL hash 里（hash 不发服务器，
+  // 纯客户端用）。ESP32 上的桥接页是 HTTP origin，再发同源 fetch POST 到
+  // /print-raster，body 就不会被 mixed-content 策略吞了。
   //
-  // 注意两个坑（实测踩过）：
-  // 1. 不要用 target="_blank"。HTTPS→HTTP 混合内容场景下，新标签页/webview 接管
-  //    导航时，body 经常被吞，ESP32 端会收到空 POST。
-  // 2. 不要 form.submit() 之后立刻 removeChild(form)。浏览器要弹"提交不安全表单"
-  //    警告，submit 是异步的；form 已从 DOM 移除时 body 也会丢。让它留着，反正
-  //    页面马上就跳走。
-  console.log("[print] 准备提交位图到", `http://${ip}/print-raster`, "base64 长度:", base64.length);
-
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = `http://${ip}/print-raster`;
-  form.enctype = "application/x-www-form-urlencoded";
-  form.acceptCharset = "utf-8";
-
-  const input = document.createElement("input");
-  input.type = "hidden";
-  input.name = "data";
-  input.value = base64;
-  form.appendChild(input);
-
-  document.body.appendChild(form);
-  form.submit();
-  // 故意不 removeChild：页面马上跳走，DOM 会随之销毁；提前移除会丢 body。
+  // URL hash 用 encodeURIComponent 包一层，避免 base64 里的 +/= 在 location.hash
+  // 取出时发生意外的字符变形。
+  const encoded = encodeURIComponent(base64);
+  const url = `http://${ip}/print-bridge#${encoded}`;
+  console.log("[print] 跳转到 bridge:", `http://${ip}/print-bridge#…`, "base64 长度:", base64.length);
+  window.location.href = url;
 }
 
 async function triggerPrint(): Promise<void> {
