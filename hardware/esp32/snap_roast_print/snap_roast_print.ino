@@ -172,9 +172,26 @@ static size_t streamBase64ToPrinter(const String& b64) {
 // ---- POST /print-raster：form 字段 data=<base64(ESC/POS raster 字节流)> ----
 static void handlePrintRaster() {
   sendCors();
+
+  // 诊断日志：进 handler 就打，定位 body 丢失/Content-Type 不对
+  Serial.println();
+  Serial.println("---- /print-raster 进入 handler ----");
+  Serial.print("args count: ");
+  Serial.println(server.args());
+  for (int i = 0; i < server.args(); i++) {
+    Serial.print("  arg["); Serial.print(i); Serial.print("] name='");
+    Serial.print(server.argName(i));
+    Serial.print("' valueLen=");
+    Serial.println(server.arg(i).length());
+  }
+  Serial.print("hasArg('data'): ");
+  Serial.println(server.hasArg("data") ? "yes" : "no");
+  Serial.print("arg('plain') length: ");
+  Serial.println(server.arg("plain").length());
+
   if (!server.hasArg("data")) {
     server.send(400, "text/html; charset=utf-8",
-                "<!doctype html><meta charset=utf-8><p>缺少 data 字段</p>");
+                "<!doctype html><meta charset=utf-8><p>缺少 data 字段（看串口诊断）</p>");
     return;
   }
 
