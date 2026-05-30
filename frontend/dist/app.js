@@ -96947,11 +96947,14 @@ async function printTestText() {
   await sendBytes(concatBytes(init, text2, feed));
 }
 async function printRasterFromElement(element2) {
+  await sendBytes(await createRasterPrintBytesFromElement(element2));
+}
+async function createRasterPrintBytesFromElement(element2) {
   const canvas2 = await elementToCanvas(element2);
   const init = new Uint8Array([27, 64]);
   const raster = canvasToEscPosRaster(canvas2, 180);
   const feed = new Uint8Array([27, 100, 4]);
-  await sendBytes(concatBytes(init, raster, feed));
+  return concatBytes(init, raster, feed);
 }
 function canvasToEscPosRaster(canvas2, threshold = 180) {
   const scale = PRINT_WIDTH_DOTS / canvas2.width;

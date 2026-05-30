@@ -92,11 +92,15 @@ export async function printTestText() {
 }
 
 export async function printRasterFromElement(element: HTMLElement) {
+  await sendBytes(await createRasterPrintBytesFromElement(element));
+}
+
+export async function createRasterPrintBytesFromElement(element: HTMLElement) {
   const canvas = await elementToCanvas(element);
   const init = new Uint8Array([0x1b, 0x40]);
   const raster = canvasToEscPosRaster(canvas, 180);
   const feed = new Uint8Array([0x1b, 0x64, 4]);
-  await sendBytes(concatBytes(init, raster, feed));
+  return concatBytes(init, raster, feed);
 }
 
 export function canvasToEscPosRaster(canvas: HTMLCanvasElement, threshold = 180) {

@@ -2,6 +2,7 @@ import { generateRoastLayoutWithSkills } from "../../packages/layout/src/generat
 import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/src/types.js";
 import { createStandaloneMangaTicket, createTicketHtmlWithManga, layoutSkills as sharedLayoutSkills } from "./sharedProductFlow.js";
 import { destroyReceiptPreviews, updateReceiptPreview } from "./p5ReceiptRenderer.js";
+import { createRasterPrintBytesFromElement } from "./lib/printer.js";
 
 type ProductLayoutType = "receipt" | "big_text" | "expression" | "sketch";
 type TriggerMode = "auto" | "manual";
@@ -141,6 +142,7 @@ const ticketLongPreview = mustQuery<HTMLDivElement>("#ticketLongPreview");
 const ticketCarousel = mustQuery<HTMLDivElement>("#ticketCarousel");
 const regenerateButton = mustQuery<HTMLButtonElement>("#regenerateButton");
 const printButton = mustQuery<HTMLButtonElement>("#printButton");
+const exportPrintCommandButton = mustQuery<HTMLButtonElement>("#exportPrintCommandButton");
 const deleteRecordButton = mustQuery<HTMLButtonElement>("#deleteRecordButton");
 const backToCameraButton = mustQuery<HTMLButtonElement>("#backToCameraButton");
 const confirmRegenerateButton = mustQuery<HTMLButtonElement>("#confirmRegenerateButton");
@@ -255,6 +257,7 @@ startGenerateButton.addEventListener("click", (event) => {
 backToCameraButton.addEventListener("click", showCamera);
 regenerateButton.addEventListener("click", openRegenerateSheet);
 confirmRegenerateButton.addEventListener("click", () => confirmRegenerate());
+exportPrintCommandButton.addEventListener("click", () => void exportCurrentPrintCommand());
 deleteRecordButton.addEventListener("click", openDeleteConfirmDialog);
 attachPrintButtonHandlers();
 cancelDeleteButton.addEventListener("click", closeDeleteConfirmDialog);
@@ -676,6 +679,7 @@ function openRegenerateSheet() {
   if (!records[currentRecordIndex] || isGenerating) return;
   regenerateDraftSettings = { ...settings };
   renderRegenerateSettings();
+  exportPrintCommandButton.disabled = !hasExportableTicket(records[currentRecordIndex]);
   regenerateBackdrop.hidden = false;
   regenerateSheet.hidden = false;
 }
@@ -836,6 +840,90 @@ function hasPrintableText(record: PhotoRecord): boolean {
   return Boolean((record.ticketText ?? "").trim());
 }
 
+function hasExportableTicket(record: PhotoRecord | undefined): record is PhotoRecord {
+  return Boolean(record && (record.ticketContent || record.ticketHtml || record.ticketText || record.sketchImageUrl));
+}
+
+async function exportCurrentPrintCommand(): Promise<void> {
+  const record = records[currentRecordIndex];
+  if (!hasExportableTicket(record)) {
+    window.alert("当前结果没有可导出的打印内容。");
+    return;
+  }
+
+  const previousLabel = exportPrintCommandButton.textContent ?? "导出指令";
+  exportPrintCommandButton.disabled = true;
+  exportPrintCommandButton.textContent = "正在导出";
+
+  try {
+    const bytes = await createPrintCommandBytes(record);
+    downloadBytes(bytes, createPrintCommandFilename(record));
+    softHaptic();
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "导出打印指令失败。");
+  } finally {
+    exportPrintCommandButton.textContent = previousLabel;
+    exportPrintCommandButton.disabled = !hasExportableTicket(records[currentRecordIndex]);
+  }
+}
+
+async function createPrintCommandBytes(record: PhotoRecord): Promise<Uint8Array> {
+  const host = document.createElement("div");
+  host.style.position = "fixed";
+  host.style.left = "-10000px";
+  host.style.top = "0";
+  host.style.width = "384px";
+  host.style.pointerEvents = "none";
+  host.style.background = "#fff";
+  host.style.zIndex = "-1";
+
+  const ticketBody = createTicketBody(record);
+  host.append(ticketBody);
+  document.body.append(host);
+
+  try {
+    await waitForTicketRender(host);
+    return await createRasterPrintBytesFromElement(ticketBody);
+  } finally {
+    destroyReceiptPreviews(host);
+    host.remove();
+  }
+}
+
+async function waitForTicketRender(host: HTMLElement): Promise<void> {
+  const startedAt = performance.now();
+  while (performance.now() - startedAt < 1600) {
+    const canvas = host.querySelector("canvas");
+    const pendingImage = Array.from(host.querySelectorAll("img")).some((image) => !image.complete);
+    if (canvas?.width && canvas.height && !pendingImage) {
+      await delay(360);
+      return;
+    }
+    if (!canvas && !pendingImage && (host.textContent ?? "").trim()) return;
+    await delay(50);
+  }
+}
+
+function downloadBytes(bytes: Uint8Array, filename: string): void {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  const blob = new Blob([buffer], { type: "text/plain;charset=x-user-defined" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function createPrintCommandFilename(record: PhotoRecord): string {
+  const stamp = (record.createdAt ?? new Date().toISOString()).replace(/[:.]/g, "-").slice(0, 19);
+  const id = record.id ? `-${record.id.slice(0, 8)}` : "";
+  return `拍立怼-print-command-${stamp}${id}.txt`.replace(/[\\/:*?"<>|]/g, "-");
+}
+
 function getStoredEsp32Ip(): string {
   try {
     return (localStorage.getItem(ESP32_IP_STORAGE_KEY) ?? "").trim();
@@ -959,6 +1047,7 @@ function renderCurrentRecord() {
     regenerateButton.disabled = true;
     deleteRecordButton.disabled = true;
     printButton.disabled = true;
+    exportPrintCommandButton.disabled = true;
     fixedPrinterSlot.hidden = true;
     renderAlbumSlides();
     resultScroller.scrollTop = 0;
@@ -971,6 +1060,7 @@ regenerateButton.disabled = !hydratedRecord;
 deleteRecordButton.disabled = !record;
 const printableRecord = hydratedRecord ?? record;
 printButton.disabled = !printableRecord || !hasPrintableText(printableRecord);
+exportPrintCommandButton.disabled = !hasExportableTicket(printableRecord);
   fixedPrinterSlot.hidden = false;
   updateResultMeta(hydratedRecord ?? record);
   renderAlbumSlides();
@@ -1734,6 +1824,10 @@ function fileToDataUrl(file: File): Promise<string> {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function isLandscapeCapture(): boolean {

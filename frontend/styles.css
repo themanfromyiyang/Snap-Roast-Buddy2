@@ -881,6 +881,7 @@ pre {
 .pill-button,
 .settings-upload-button,
 .camera-mode-strip button,
+.export-command-button,
 .confirm-regenerate-button,
 .confirm-cancel-button,
 .confirm-delete-button,
@@ -900,6 +901,7 @@ pre {
 .pill-button:active,
 .settings-upload-button:active,
 .camera-mode-strip button:active,
+.export-command-button:active,
 .confirm-regenerate-button:active,
 .confirm-cancel-button:active,
 .confirm-delete-button:active,
@@ -912,6 +914,7 @@ pre {
 .product-body.is-landscape .pill-button,
 .product-body.is-landscape .settings-upload-button,
 .product-body.is-landscape .camera-mode-strip button,
+.product-body.is-landscape .export-command-button,
 .product-body.is-landscape .confirm-regenerate-button,
 .product-body.is-landscape .confirm-cancel-button,
 .product-body.is-landscape .confirm-delete-button {
@@ -921,6 +924,7 @@ pre {
 .product-body.is-landscape .pill-button:active,
 .product-body.is-landscape .settings-upload-button:active,
 .product-body.is-landscape .camera-mode-strip button:active,
+.product-body.is-landscape .export-command-button:active,
 .product-body.is-landscape .confirm-regenerate-button:active,
 .product-body.is-landscape .confirm-cancel-button:active,
 .product-body.is-landscape .confirm-delete-button:active {
@@ -933,6 +937,7 @@ pre {
 .settings-upload-button:focus-visible,
 .camera-zoom-strip button:focus-visible,
 .camera-mode-strip button:focus-visible,
+.export-command-button:focus-visible,
 .confirm-regenerate-button:focus-visible,
 .confirm-cancel-button:focus-visible,
 .confirm-delete-button:focus-visible,
@@ -2169,6 +2174,25 @@ pre {
   box-shadow: inset 0 0 0 1px var(--product-separator);
   -webkit-backdrop-filter: blur(18px) saturate(1.45);
   backdrop-filter: blur(18px) saturate(1.45);
+}
+
+.export-command-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(44, 44, 46, 0.72);
+  color: var(--product-label);
+  font-size: 0.88rem;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 74, 0.28);
+  -webkit-backdrop-filter: blur(18px) saturate(1.45);
+  backdrop-filter: blur(18px) saturate(1.45);
+}
+
+.export-command-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .delete-confirm-sheet {
