@@ -3,237 +3,159 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>拍立怼 Snap Roast Buddy</title>
+    <title>Snap Roast Buddy 测试页</title>
     <link rel="stylesheet" href="./styles.css" />
-    <!-- UTF-8 → GBK 编码（codepage 936），用于 ESP32 打印按钮把中文文本透传到打印机
-         本地托管避免 CDN 在国内被墙；先加载码表数据，再加载 utils -->
-    <script src="./vendor/cp936.js"></script>
-    <script src="./vendor/cputils.js"></script>
   </head>
-  <body class="product-body">
-    <main class="product-app" aria-label="Snap Roast Buddy 产品模式">
-      <section id="cameraScreen" class="phone-screen camera-screen">
-        <header class="product-topbar">
-          <a class="product-back" href="./index.html" aria-label="返回产品页">产品页</a>
-          <div class="product-title">
-            <p class="product-kicker">Snap Roast Buddy</p>
-            <h1>拍立怼</h1>
+  <body>
+    <main class="app-shell">
+      <section class="control-pane" aria-label="输入与控制">
+        <div class="brand-lockup">
+          <p class="eyebrow">Snap Roast Buddy</p>
+          <h1>图片到热敏纸小票</h1>
+          <div class="entry-links">
+            <a class="debug-link product-entry" href="./index.html">进入产品模式</a>
+            <a class="debug-link" href="./debug.html">查看调试面板</a>
           </div>
-          <div class="top-actions">
-            <button id="sketchToggleButton" class="icon-button sketch-toggle" type="button" aria-label="漫画开关">
-              <span class="sketch-icon" aria-hidden="true"></span>
-            </button>
-            <button id="settingsButton" class="icon-button settings-toggle" type="button" aria-label="打开设置">
-              <span class="settings-icon" aria-hidden="true"></span>
-            </button>
-          </div>
-        </header>
-
-        <div id="viewfinder" class="viewfinder" role="button" tabindex="0" aria-label="选择照片">
-          <video id="cameraFeed" autoplay playsinline muted hidden></video>
-          <img id="cameraPreview" alt="待拍摄图片预览" />
-          <div id="emptyViewfinder" class="viewfinder-empty">
-            <small id="cameraDebugMessage"></small>
-          </div>
-          <div id="manualStartPanel" class="manual-start" hidden>
-            <p>照片已就位</p>
-            <button id="startGenerateButton" class="pill-button primary-pill" type="button">开始生成</button>
-          </div>
-          <div id="cameraZoomStrip" class="camera-zoom-strip" aria-label="拍摄倍率">
-            <button type="button" data-zoom="1" class="is-selected zoom-major">1x</button>
-            <button type="button" data-zoom="1.2" aria-label="1.2x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="1.4" aria-label="1.4x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="1.6" aria-label="1.6x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="1.8" aria-label="1.8x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="2" class="zoom-major">2</button>
-            <button type="button" data-zoom="2.2" aria-label="2.2x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="2.4" aria-label="2.4x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="2.6" aria-label="2.6x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="2.8" aria-label="2.8x"><span class="zoom-tick"></span></button>
-            <button type="button" data-zoom="3" class="zoom-major">3</button>
+          <div class="service-check">
+            <button class="secondary-action" type="button" id="testSupabaseButton">测试 Supabase 连接</button>
+            <p class="step-status" id="supabaseStatus" data-state="ready">等待检测 Supabase。</p>
           </div>
         </div>
 
-        <p id="cameraHint" class="camera-hint">按下快门，生成今日照片审判。</p>
+        <section class="step-card">
+          <div class="step-title">
+            <span>1</span>
+            <h2>上传图片，分析内容</h2>
+          </div>
+          <input id="imageUpload" type="file" accept="image/*" />
+          <div class="image-examples" id="imageExamples" aria-label="示例图片"></div>
+          <div class="image-preview">
+            <img id="imagePreview" alt="待分析图片预览" />
+          </div>
+          <button class="secondary-action" type="button" id="analyzeImageButton">分析图片内容</button>
+          <p class="step-status" id="imageStatus" data-state="ready">请选择示例图或上传图片。</p>
+        </section>
 
-        <footer class="camera-dock">
-          <div class="camera-mode-strip" data-setting="generationMode" aria-label="生成模式">
-            <button type="button" data-value="auto">自动</button>
-            <button type="button" data-value="receipt">小票</button>
-            <button type="button" data-value="big_text">爆字</button>
-            <button type="button" data-value="expression">表情</button>
+        <section class="step-card">
+          <div class="step-title">
+            <span>2</span>
+            <h2>三分类与生成设置</h2>
           </div>
-          <div class="camera-controls">
-          <button id="galleryButton" class="thumbnail-button" type="button" aria-label="查看照片结果">
-            <span id="latestThumb"></span>
-          </button>
-          <button id="shutterButton" class="shutter-button" type="button" aria-label="快门"></button>
-          <button id="latestButton" class="round-tool flip-button" type="button" aria-label="镜头翻转">↻</button>
+          <label for="photoDescription">图片描述 / 可手动编辑</label>
+          <textarea id="photoDescription" spellcheck="false"></textarea>
+          <div class="examples-row" id="examples" aria-label="文字范例"></div>
+
+          <div class="control-grid">
+            <label>
+              <span>文字模式</span>
+              <select id="mode">
+                <option value="auto">自动</option>
+                <option value="receipt">小票</option>
+                <option value="big_text">爆字</option>
+                <option value="pixel_expression">表情</option>
+              </select>
+            </label>
+            <label>
+              <span>吐槽强度</span>
+              <select id="roastLevel">
+                <option value="normal">正常</option>
+                <option value="gentle">温柔</option>
+                <option value="spicy">辛辣</option>
+                <option value="public_execution">处刑</option>
+              </select>
+            </label>
           </div>
-        </footer>
+
+          <div class="control-grid">
+            <label>
+              <span>漫画</span>
+              <select id="mangaMode">
+                <option value="none">不使用</option>
+                <option value="top">放在顶部</option>
+                <option value="bottom">放在底部</option>
+                <option value="standalone">单独生成</option>
+              </select>
+            </label>
+            <label>
+              <span>当前流程</span>
+              <strong id="workflowReadout">图片分析 / 排版选择 / 内容生成</strong>
+            </label>
+          </div>
+
+          <button class="secondary-action" type="button" id="classifyButton">进行三分类</button>
+          <p class="step-status" id="classificationStatus" data-state="ready">等待图片描述。</p>
+          <div class="result-meta">
+            <div>
+              <span class="meta-label">分类结果</span>
+              <strong id="classificationType">等待分类</strong>
+            </div>
+            <div>
+              <span class="meta-label">Confidence</span>
+              <strong id="classificationConfidence">-</strong>
+            </div>
+          </div>
+          <p class="reason" id="classificationReason"></p>
+        </section>
+
+        <section class="step-card">
+          <div class="step-title">
+            <span>3</span>
+            <h2>生成评价与小票排版</h2>
+          </div>
+          <button class="primary-action" type="button" id="generateButton">生成 AI 小票</button>
+          <p class="api-status" id="apiStatus" data-state="ready"></p>
+
+          <div class="ai-card">
+            <span class="meta-label">AI 评价</span>
+            <p id="aiComment"></p>
+          </div>
+
+          <div class="result-meta">
+            <div>
+              <span class="meta-label">Layout</span>
+              <strong id="layoutType">receipt</strong>
+            </div>
+            <div>
+              <span class="meta-label">Canvas</span>
+              <strong id="heightReadout">384px x auto</strong>
+            </div>
+          </div>
+          <p class="reason" id="reason"></p>
+        </section>
+
+        <section class="step-card">
+          <div class="step-title">
+            <span>4</span>
+            <h2>生成漫画并合入小票</h2>
+          </div>
+          <button class="secondary-action" type="button" id="generateMangaButton">生成漫画</button>
+          <p class="step-status" id="mangaStatus" data-state="ready">漫画会直接由图片生成白底黑线结果，再按设置插入小票。</p>
+        </section>
       </section>
 
-      <section id="generatingScreen" class="phone-screen generating-screen" hidden>
-        <div class="generate-photo-wrap">
-          <img id="generatingImage" alt="正在生成的图片" />
+      <section class="preview-pane" aria-label="小票预览">
+        <div class="preview-toolbar">
+          <div>
+            <p class="eyebrow">58mm thermal preview</p>
+            <h2>固定宽度，长度随内容增长</h2>
+          </div>
         </div>
-        <div class="buddy-orbit" aria-hidden="true">
-          <span>▣</span>
-          <span>_</span>
-          <span>▣</span>
+
+        <div class="paper-stage">
+          <div class="paper-shadow">
+            <div class="paper-teeth" aria-hidden="true"></div>
+            <div id="receiptPaper" class="receipt-paper"></div>
+            <div class="paper-feed" aria-hidden="true"></div>
+          </div>
         </div>
-        <p class="product-kicker">Buddy is watching</p>
-        <p id="generatingStep" class="generating-step">1/3</p>
-        <h2 id="generatingTitle">正在认真看图……</h2>
-        <div class="progress-rail"><span id="progressFill"></span></div>
-        <p id="generatingMessage" class="generating-message">正在寻找槽点……</p>
+
+        <details class="text-details">
+          <summary>纯文本预览</summary>
+          <pre id="textPreview"></pre>
+        </details>
       </section>
-
-      <section id="resultScreen" class="phone-screen result-screen" hidden>
-        <header class="result-topbar">
-          <button id="backToCameraButton" class="round-tool result-back-button" type="button" aria-label="返回拍摄">‹</button>
-          <div class="result-title">
-            <p class="product-kicker">Roast Roll</p>
-            <h2 id="recordCounter">1 / 1</h2>
-          </div>
-          <div class="result-top-actions">
-            <button id="regenerateButton" class="icon-button result-icon-button regenerate-icon-button" type="button" aria-label="重新生成">
-              <span aria-hidden="true"></span>
-            </button>
-            <button id="printButton" class="icon-button result-icon-button print-icon-button" type="button" aria-label="发到 ESP32 打印" title="按一下打印 · 长按 1 秒重设 IP">
-              <span aria-hidden="true">🖨</span>
-            </button>
-            <button id="deleteRecordButton" class="icon-button result-icon-button delete-icon-button" type="button" aria-label="删除">
-              <span aria-hidden="true"></span>
-            </button>
-          </div>
-        </header>
-
-        <div id="resultScroller" class="result-scroller">
-          <div id="imageCarousel" class="album-carousel image-carousel" aria-label="照片结果横向浏览"></div>
-          <img id="resultOriginalImage" class="result-original" alt="原始照片" />
-          <div class="photo-info">
-            <span id="recordTime">今天 14:32</span>
-            <strong id="recordMode">Receipt Mode</strong>
-          </div>
-          <div id="fixedPrinterSlot" class="printer-slot fixed-printer-slot"><span></span></div>
-          <div id="ticketCarousel" class="album-carousel ticket-carousel" aria-label="小票结果横向浏览"></div>
-          <div id="ticketLongPreview" class="ticket-long-preview"></div>
-        </div>
-      </section>
-
-      <div id="imageLightbox" class="image-lightbox" hidden>
-        <img id="lightboxImage" alt="原始照片大图" />
-      </div>
-
-      <div id="deleteConfirmBackdrop" class="sheet-backdrop" hidden></div>
-      <aside id="deleteConfirmSheet" class="settings-sheet delete-confirm-sheet" hidden aria-labelledby="deleteConfirmTitle">
-        <button class="settings-collapse" type="button" aria-hidden="true" tabindex="-1">
-          <span></span>
-        </button>
-        <div>
-          <h2 id="deleteConfirmTitle">删除这张结果？此操作无法恢复。</h2>
-          <div class="delete-confirm-actions">
-            <button id="cancelDeleteButton" class="confirm-cancel-button" value="cancel" type="button">取消</button>
-            <button id="confirmDeleteButton" class="confirm-delete-button" value="confirm" type="button">确定</button>
-          </div>
-        </div>
-      </aside>
-
-      <div id="regenerateBackdrop" class="sheet-backdrop" hidden></div>
-      <aside id="regenerateSheet" class="settings-sheet regenerate-sheet" hidden aria-label="重新生成设置">
-        <button id="closeRegenerateButton" class="settings-collapse" type="button" aria-label="收起重新生成设置">
-          <span></span>
-        </button>
-
-        <section class="setting-group">
-          <h3>生成模式</h3>
-          <div class="segmented-control intensity-control" data-regenerate-setting="generationMode">
-            <button type="button" data-value="auto">自动</button>
-            <button type="button" data-value="receipt">小票</button>
-            <button type="button" data-value="big_text">爆字</button>
-            <button type="button" data-value="expression">表情</button>
-          </div>
-        </section>
-
-        <section class="setting-group">
-          <h3>吐槽强度</h3>
-          <div class="segmented-control intensity-control" data-regenerate-setting="roastLevel">
-            <button type="button" data-value="gentle">温柔</button>
-            <button type="button" data-value="normal">正常</button>
-            <button type="button" data-value="spicy">辛辣</button>
-            <button type="button" data-value="public_execution">处刑</button>
-          </div>
-        </section>
-
-        <section class="setting-group">
-          <h3>漫画</h3>
-          <div class="segmented-control" data-regenerate-setting="sketchEnabled">
-            <button type="button" data-value="off">关闭</button>
-            <button type="button" data-value="on">开启</button>
-          </div>
-        </section>
-
-        <section id="regenerateSketchDetailGroup" class="sketch-detail-group" hidden>
-          <div class="option-list compact-options" data-regenerate-setting="sketchMode">
-            <button type="button" data-value="top">顶部</button>
-            <button type="button" data-value="bottom">底部</button>
-            <button type="button" data-value="standalone">单独</button>
-          </div>
-        </section>
-
-        <button id="confirmRegenerateButton" class="confirm-regenerate-button" type="button">确定重新生成</button>
-      </aside>
-
-      <div id="settingsBackdrop" class="sheet-backdrop" hidden></div>
-      <aside id="settingsSheet" class="settings-sheet" hidden aria-label="设置面板">
-        <button id="closeSettingsButton" class="settings-collapse" type="button" aria-label="收起设置">
-          <span></span>
-        </button>
-
-        <section class="setting-group">
-          <h3>拍摄方向</h3>
-          <div class="segmented-control" data-setting="captureOrientation">
-            <button type="button" data-value="portrait">竖屏</button>
-            <button type="button" data-value="landscape">横屏</button>
-          </div>
-        </section>
-
-        <section class="setting-group">
-          <h3>吐槽强度</h3>
-          <div class="segmented-control intensity-control" data-setting="roastLevel">
-            <button type="button" data-value="gentle">温柔</button>
-            <button type="button" data-value="normal">正常</button>
-            <button type="button" data-value="spicy">辛辣</button>
-            <button type="button" data-value="public_execution">处刑</button>
-          </div>
-        </section>
-
-        <section class="setting-group">
-          <h3>漫画</h3>
-          <div class="segmented-control" data-setting="sketchEnabled">
-            <button type="button" data-value="off">关闭</button>
-            <button type="button" data-value="on">开启</button>
-          </div>
-        </section>
-
-        <section id="sketchDetailGroup" class="sketch-detail-group" hidden>
-          <div class="option-list compact-options" data-setting="sketchMode">
-            <button type="button" data-value="top">顶部</button>
-            <button type="button" data-value="bottom">底部</button>
-            <button type="button" data-value="standalone">单独</button>
-          </div>
-        </section>
-
-        <section class="setting-group">
-          <h3>导入照片</h3>
-          <button id="uploadPhotoButton" class="settings-upload-button" type="button">从相册选择</button>
-        </section>
-      </aside>
-
-      <input id="productImageInput" type="file" accept="image/*" hidden />
     </main>
 
-    <script type="module" src="./dist/product.js"></script>
+    <script type="module" src="./dist/app.js"></script>
   </body>
 </html>
