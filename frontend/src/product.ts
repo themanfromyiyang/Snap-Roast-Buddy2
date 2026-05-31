@@ -1107,37 +1107,57 @@ function renderAlbumSlides() {
   }
 
   records.forEach((record, index) => {
-    const albumSlide = document.createElement("article");
-    albumSlide.className = "album-slide album-combined-slide";
-    const shouldHydrate = shouldHydrateAlbumSlide(index);
-    const hydratedRecord = isHydratedRecord(record) ? record : undefined;
-
-    const img = hydratedRecord && shouldHydrate ? document.createElement("img") : document.createElement("div");
-    img.className = hydratedRecord && shouldHydrate ? "result-original" : "result-original result-placeholder";
-    if (hydratedRecord && shouldHydrate) {
-      (img as HTMLImageElement).src = hydratedRecord.originalImageUrl;
-      (img as HTMLImageElement).alt = "原始照片";
-    }
-    if (hydratedRecord && shouldHydrate) {
-      img.addEventListener("click", () => {
-        currentRecordIndex = index;
-        updateResultMeta(hydratedRecord);
-        openImageLightbox();
-      });
-    } else {
-      img.setAttribute("aria-label", "正在读取照片");
-    }
-
-    const fixedMiddleSpace = document.createElement("div");
-    fixedMiddleSpace.className = "album-fixed-middle-space";
-    fixedMiddleSpace.setAttribute("aria-hidden", "true");
-    albumSlide.append(img, fixedMiddleSpace, hydratedRecord && shouldHydrate ? createTicketBody(hydratedRecord) : createLoadingTicketBody(index, Boolean(record)));
-    imageCarousel.append(albumSlide);
+    imageCarousel.append(createAlbumSlide(record, index, shouldHydrateAlbumSlide(index)));
   });
 }
 
 function shouldHydrateAlbumSlide(index: number) {
   return Math.abs(index - currentRecordIndex) <= 1;
+}
+
+function createAlbumSlide(record: PhotoRecord | undefined, index: number, shouldHydrate: boolean) {
+  const albumSlide = document.createElement("article");
+  albumSlide.className = "album-slide album-combined-slide";
+  albumSlide.dataset.recordIndex = String(index);
+  fillAlbumSlide(albumSlide, record, index, shouldHydrate);
+  return albumSlide;
+}
+
+function fillAlbumSlide(albumSlide: HTMLElement, record: PhotoRecord | undefined, index: number, shouldHydrate: boolean) {
+  const hydratedRecord = isHydratedRecord(record) && shouldHydrate ? record : undefined;
+  albumSlide.dataset.recordId = record?.id ?? "";
+  albumSlide.dataset.hydrated = String(Boolean(hydratedRecord));
+
+  const img = hydratedRecord ? document.createElement("img") : document.createElement("div");
+  img.className = hydratedRecord ? "result-original" : "result-original result-placeholder";
+  if (hydratedRecord) {
+    (img as HTMLImageElement).src = hydratedRecord.originalImageUrl;
+    (img as HTMLImageElement).alt = "原始照片";
+    img.addEventListener("click", () => {
+      currentRecordIndex = index;
+      updateResultMeta(hydratedRecord);
+      openImageLightbox();
+    });
+  } else {
+    img.setAttribute("aria-label", "正在读取照片");
+  }
+
+  const fixedMiddleSpace = document.createElement("div");
+  fixedMiddleSpace.className = "album-fixed-middle-space";
+  fixedMiddleSpace.setAttribute("aria-hidden", "true");
+  albumSlide.append(img, fixedMiddleSpace, hydratedRecord ? createTicketBody(hydratedRecord) : createLoadingTicketBody(index, Boolean(record)));
+}
+
+function refreshAlbumSlideWindow(index: number) {
+  for (let slideIndex = Math.max(0, index - 1); slideIndex <= Math.min(records.length - 1, index + 1); slideIndex += 1) {
+    const slide = imageCarousel.querySelector<HTMLElement>(`.album-slide[data-record-index="${slideIndex}"]`);
+    const record = records[slideIndex];
+    if (!slide || !isHydratedRecord(record)) continue;
+    if (slide.dataset.recordId === record.id && slide.dataset.hydrated === "true") continue;
+    destroyReceiptPreviews(slide);
+    slide.innerHTML = "";
+    fillAlbumSlide(slide, record, slideIndex, true);
+  }
 }
 
 function openDeleteConfirmDialog() {
@@ -1262,7 +1282,7 @@ function shiftRecord(offset: number) {
   const next = (currentRecordIndex + offset + records.length) % records.length;
   currentRecordIndex = next;
   updateResultMeta(records[currentRecordIndex]);
-  renderAlbumSlides();
+  refreshAlbumSlideWindow(currentRecordIndex);
   scrollAlbumToIndex(currentRecordIndex, "smooth");
   void loadProductRecordWindow(currentRecordIndex);
 }
@@ -1290,7 +1310,7 @@ function snapAlbumToNearest(source: HTMLDivElement) {
   visibleAlbumIndex = index;
   currentRecordIndex = index;
   updateResultMeta(records[index]);
-  renderAlbumSlides();
+  refreshAlbumSlideWindow(index);
   scrollAlbumToIndex(index, "smooth");
   void loadProductRecordWindow(index);
 }
@@ -1443,9 +1463,13 @@ async function loadProductRecordAtIndex(index: number) {
     if (nextRecords.length) await writeCachedProductRecords(mergeRecords(await readCachedProductRecords(), nextRecords));
     renderLatestThumb();
     if (!resultScreen.hidden) {
-      renderAlbumSlides();
+      if (imageCarousel.children.length !== records.length) {
+        renderAlbumSlides();
+        scrollAlbumToIndex(currentRecordIndex, "auto");
+      } else {
+        refreshAlbumSlideWindow(currentRecordIndex);
+      }
       updateResultMeta(records[currentRecordIndex]);
-      scrollAlbumToIndex(currentRecordIndex, "auto");
     }
   } finally {
     loadingRecordPages.delete(pageOffset);
