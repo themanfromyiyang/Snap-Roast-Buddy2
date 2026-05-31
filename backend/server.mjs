@@ -17,6 +17,8 @@ const {
   handleSupabaseHealth
 } = await import("../api/_shared.mjs");
 
+const { default: handleSfToken } = await import("../api/sf-token.mjs");
+
 const root = resolve("frontend");
 const port = Number(process.env.PORT ?? 5173);
 const productDataDir = resolve("local-data");
@@ -46,6 +48,7 @@ const server = createServer(async (request, response) => {
   if (request.method === "GET" && url.pathname === "/api/debug/prompts") return handleDebugPrompts(request, response);
   if (request.method === "GET" && url.pathname === "/api/debug/skills") return handleDebugSkills(request, response);
   if (request.method === "GET" && url.pathname === "/api/supabase-health") return handleSupabaseHealth(request, response);
+  if (request.method === "GET" && url.pathname === "/api/sf-token") return handleSfToken(request, response);
 
   const requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const filePath = normalize(join(root, requestedPath));
