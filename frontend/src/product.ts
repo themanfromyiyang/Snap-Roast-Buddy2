@@ -3,6 +3,7 @@ import type { LayoutType, RoastLevel, RoastMode } from "../../packages/layout/sr
 import { createStandaloneMangaTicket, createTicketHtmlWithManga, layoutSkills as sharedLayoutSkills } from "./sharedProductFlow.js";
 import { destroyReceiptPreviews, updateReceiptPreview } from "./p5ReceiptRenderer.js";
 import { bytesToBase64, canvasToEscPosRaster, elementToCanvas } from "./lib/printer.js";
+import mqtt from "mqtt";
 
 type ProductLayoutType = "receipt" | "big_text" | "expression" | "sketch";
 type TriggerMode = "auto" | "manual";
@@ -1766,3 +1767,30 @@ window.setTimeout(centerSelectedCameraMode, 80);
 window.setTimeout(centerSelectedCameraZoom, 80);
 productRecordsLoadPromise = loadProductRecords();
 window.addEventListener("resize", syncOrientationState);
+
+// ---- 硬件快门按钮：订阅 ESP32 经 MQTT 中转的按下事件 ----
+const SHUTTER_MQTT_TOPIC = "snap-roast/db298f0eed7aa043/shutter";
+const shutterMqttClient = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {
+  reconnectPeriod: 3000,
+  clean: true,
+});
+
+let lastShutterTs = 0;
+shutterMqttClient.on("connect", () => {
+  shutterMqttClient.subscribe(SHUTTER_MQTT_TOPIC, (err) => {
+    if (err) console.error("[shutter-mqtt] subscribe failed", err);
+    else console.log("[shutter-mqtt] subscribed to", SHUTTER_MQTT_TOPIC);
+  });
+});
+shutterMqttClient.on("message", (_topic, payload) => {
+  try {
+    const { ts } = JSON.parse(payload.toString()) as { ts?: number };
+    if (typeof ts !== "number" || ts === lastShutterTs) return;
+    lastShutterTs = ts;
+    console.log("[shutter-mqtt] press received, ts=", ts);
+    shutterButton.click();
+  } catch (e) {
+    console.warn("[shutter-mqtt] bad payload", e);
+  }
+});
+shutterMqttClient.on("error", (e) => console.error("[shutter-mqtt] error", e));
