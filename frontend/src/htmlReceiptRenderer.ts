@@ -93,14 +93,15 @@ function renderSimple(data: ReceiptData, level: string) {
 
 function renderBigText(data: ReceiptData, level: string) {
   const title = trim(data.headline || data.oneLineRoast || data.roast, level === "gentle" ? 12 : 9);
+  const verticalTitle = [...title].map((char, index) => `<span style="--title-index:${index}">${escape(char)}</span>`).join("");
   const tags = shortWords(data);
   const repeats = level === "execution" ? `<div class="receipt-overprint">${Array.from({ length: 3 }, () => `<span>${escape(title)}</span>`).join("")}</div>` : "";
   return [
-    header("BIG ROAST", "横向单句暴击"),
+    header("BIG ROAST", "纵向单字暴击"),
     `<section class="big-roast-stage">
       <div class="big-roast-kicker">${level === "gentle" ? "今日判词" : "[ ROAST WITH THE DAWN ]"}</div>
       ${repeats}
-      <div class="big-roast-title">${escape(title)}</div>
+      <div class="big-roast-title">${verticalTitle}</div>
       <p class="big-roast-note">${escape(data.oneLineRoast || data.roast)}</p>
       <div class="big-roast-index">SRB / TYPE IMPACT / 2026</div>
       <div class="receipt-chips">${tags.slice(0, level === "gentle" ? 2 : 4).map((tag) => `<span>${escape(tag)}</span>`).join("")}</div>
