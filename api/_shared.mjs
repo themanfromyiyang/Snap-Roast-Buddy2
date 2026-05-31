@@ -179,6 +179,9 @@ export async function handleGenerateDoodle(req, res) {
     const data = await completion.json();
     const imageResult = extractGeneratedImage(data);
     const imageDataUrl = imageResult.base64 ? "" : await downloadImageAsDataUrl(imageResult.url);
+    if (imageResult.url && !imageDataUrl) {
+      return sendJson(res, 502, { error: "Generated comic could not be persisted. Please retry." });
+    }
 
     return sendJson(res, 200, {
       imageUrl: imageDataUrl ? "" : imageResult.url,
@@ -538,7 +541,12 @@ async function normalizeRecordImages(record) {
   if (!record) return undefined;
   if (record.sketchImageUrl?.startsWith("http")) {
     const sketchDataUrl = await downloadImageAsDataUrl(record.sketchImageUrl);
-    if (sketchDataUrl) record.sketchImageUrl = sketchDataUrl;
+    if (sketchDataUrl) {
+      record.sketchImageUrl = sketchDataUrl;
+    } else {
+      record.sketchImageUrl = "";
+      record.sketchImageExpired = true;
+    }
   }
   return record;
 }

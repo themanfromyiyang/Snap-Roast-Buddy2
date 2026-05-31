@@ -720,11 +720,7 @@ pre {
 }
 
 .product-body.is-landscape {
-  --ui-rotation: 90deg;
-}
-
-.product-body.is-landscape .product-app {
-  width: 100vw;
+  --ui-rotation: 0deg;
 }
 
 .product-app {
@@ -911,24 +907,16 @@ pre {
   transform: rotate(var(--ui-rotation)) scale(0.96);
 }
 
-.product-body.is-landscape .pill-button,
-.product-body.is-landscape .settings-upload-button,
-.product-body.is-landscape .camera-mode-strip button,
-.product-body.is-landscape .export-command-button,
-.product-body.is-landscape .confirm-regenerate-button,
-.product-body.is-landscape .confirm-cancel-button,
-.product-body.is-landscape .confirm-delete-button {
-  transform: none;
+.product-body.is-landscape .icon-button,
+.product-body.is-landscape .round-tool,
+.product-body.is-landscape .thumbnail-button {
+  transform: rotate(90deg);
 }
 
-.product-body.is-landscape .pill-button:active,
-.product-body.is-landscape .settings-upload-button:active,
-.product-body.is-landscape .camera-mode-strip button:active,
-.product-body.is-landscape .export-command-button:active,
-.product-body.is-landscape .confirm-regenerate-button:active,
-.product-body.is-landscape .confirm-cancel-button:active,
-.product-body.is-landscape .confirm-delete-button:active {
-  transform: scale(0.96);
+.product-body.is-landscape .icon-button:active,
+.product-body.is-landscape .round-tool:active,
+.product-body.is-landscape .thumbnail-button:active {
+  transform: rotate(90deg) scale(0.96);
 }
 
 .icon-button:focus-visible,
@@ -1313,13 +1301,6 @@ pre {
   padding: 4px 0 0;
   background: linear-gradient(transparent 0%, rgba(0, 0, 0, 0.88) 28%, #000 100%);
   pointer-events: auto;
-}
-
-.product-body.is-landscape .camera-dock {
-  right: max(12px, env(safe-area-inset-right));
-  left: max(12px, env(safe-area-inset-left));
-  gap: 6px;
-  padding-top: 4px;
 }
 
 .camera-mode-strip {
@@ -1820,6 +1801,7 @@ pre {
   scrollbar-width: none;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
 }
 
 .album-carousel::-webkit-scrollbar {
@@ -2053,6 +2035,12 @@ pre {
   height: auto !important;
 }
 
+.album-carousel .p5-receipt-host,
+.album-carousel .p5-receipt-host canvas {
+  pointer-events: none;
+  touch-action: pan-x pan-y;
+}
+
 .text-paper {
   padding: 18px;
   white-space: pre-wrap;
@@ -2083,6 +2071,17 @@ pre {
 .empty-ticket {
   margin: 0;
   color: rgba(255, 250, 241, 0.72);
+}
+
+.expired-sketch-note {
+  width: calc(100% - 28px);
+  margin: 8px auto 18px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.48);
+  color: var(--product-secondary-label);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .result-actions {

@@ -33,6 +33,7 @@ type PhotoRecord = {
   ticketContent?: unknown;
   ticketText?: string;
   sketchImageUrl?: string;
+  sketchImageExpired?: boolean;
   caption?: string;
 };
 
@@ -324,7 +325,7 @@ imageInput.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
   imageInput.value = "";
   if (!file) return;
-  selectedImageUrl = await fileToDataUrl(file);
+  selectedImageUrl = await normalizeSelectedImageOrientation(await fileToDataUrl(file));
   showSelectedImagePreview(selectedImageUrl);
   cameraHint.textContent =
     settings.triggerMode === "auto" ? "Buddy 已经开始观察导入的照片。" : "照片已放进取景框，按开始生成。";
@@ -471,8 +472,8 @@ async function captureFromCamera() {
   context.drawImage(cameraFeed, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
 
   if (isLandscapeCapture()) {
-    outputContext.translate(outputCanvas.width, 0);
-    outputContext.rotate(Math.PI / 2);
+    outputContext.translate(0, outputCanvas.height);
+    outputContext.rotate(-Math.PI / 2);
     outputContext.drawImage(canvas, 0, 0, canvas.width, canvas.height);
   } else {
     outputContext.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height);
@@ -1180,7 +1181,12 @@ function createTicketBody(record: PhotoRecord): HTMLElement {
   const body = document.createElement("div");
   body.className = "ticket-long-preview";
 
-  if (record.ticketContent) {
+  if (record.sketchMode === "standalone" && record.sketchImageUrl) {
+    const shell = document.createElement("div");
+    shell.className = "product-paper";
+    shell.innerHTML = createStandaloneMangaTicket(record.sketchImageUrl);
+    body.append(shell);
+  } else if (record.ticketContent) {
     const shell = document.createElement("div");
     shell.className = "product-paper";
     body.append(shell);
@@ -1208,8 +1214,13 @@ function createTicketBody(record: PhotoRecord): HTMLElement {
   if (!record.ticketHtml && !record.ticketText && !record.sketchImageUrl) {
     const empty = document.createElement("p");
     empty.className = "empty-ticket";
-    empty.textContent = "这张结果还没有可展示内容。";
+    empty.textContent = record.sketchImageExpired ? "历史漫画链接已过期，请重新生成漫画。" : "这张结果还没有可展示内容。";
     body.append(empty);
+  } else if (record.sketchImageExpired) {
+    const expired = document.createElement("p");
+    expired.className = "expired-sketch-note";
+    expired.textContent = "历史漫画链接已过期，请重新生成漫画。";
+    body.append(expired);
   }
 
   return body;
@@ -1896,6 +1907,29 @@ function delay(ms: number): Promise<void> {
 
 function isLandscapeCapture(): boolean {
   return settings.captureOrientation === "landscape";
+}
+
+async function normalizeSelectedImageOrientation(imageUrl: string): Promise<string> {
+  if (!isLandscapeCapture()) return imageUrl;
+  const image = await loadImageElement(imageUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalHeight;
+  canvas.height = image.naturalWidth;
+  const context = canvas.getContext("2d");
+  if (!context) return imageUrl;
+  context.translate(0, canvas.height);
+  context.rotate(-Math.PI / 2);
+  context.drawImage(image, 0, 0);
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+function loadImageElement(imageUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener("error", () => reject(new Error("读取导入照片失败。")), { once: true });
+    image.src = imageUrl;
+  });
 }
 
 function syncOrientationState() {
