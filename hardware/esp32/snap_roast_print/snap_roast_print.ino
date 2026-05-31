@@ -35,6 +35,20 @@ const char* password = "Qwer123321";
 
 static uint32_t dtrTimeoutCount = 0;
 
+// ---- 分块打印会话状态（/print-chunk 用） ----
+// ESP32 WebServer 的 form-urlencoded / text/plain body 解析对 60KB+ 不可靠：
+// 1) 库内部 client.readBytes(buf, contentLength) 默认 1000ms 超时，跨 WiFi 收
+//    60KB+ 经常掐边；2) 同时持有原始 body String + URL-decoded String + 解析临时
+//    buffer，~150KB 在 WiFi 栈剩下的堆里容易 malloc 失败/碎片化。
+// 解决：bridge 把 base64 切成 3000 字符/块串行 POST 过来，ESP32 收到一块立刻
+// streamBase64ToPrinter 喂打印机，不缓存，单次请求堆占用 < 15KB。
+static bool printSessionActive = false;
+static int  printSessionExpectedSeq = 0;
+static int  printSessionTotalChunks = 0;
+static uint32_t printSessionLastMillis = 0;
+static uint32_t printSessionBytesOut = 0;
+static const uint32_t PRINT_SESSION_TIMEOUT_MS = 30000;
+
 HardwareSerial Printer(1);
 WebServer server(80);
 
@@ -215,20 +229,24 @@ static void handlePrintBridge() {
   html += "const raw=location.hash.slice(1);";
   html += "if(!raw){s.textContent='错误：URL 没有 hash 数据';s.classList.add('err');return;}";
   html += "const b64=decodeURIComponent(raw);";
-  // 把 hash 原始长度 + 解码后 b64 长度都暴露在页面上，方便诊断 URL hash 是否被截
-  html += "s.textContent='hash='+raw.length+' b64='+b64.length+'，发送中…';";
+  // ESP32 WebServer 单次 POST body 在 60KB+ 不可靠（readBytes 1s 超时 + 内部
+  // String 反复 realloc 撞 heap 碎片）。改成分块串行上传：每块 3000 字符（4 的
+  // 倍数 → base64 6-bit 单元不会被切断），每块 ~4.5KB urlencoded，远低于库限制。
+  html += "const CHUNK=3000;";
+  html += "const total=Math.ceil(b64.length/CHUNK);";
+  html += "s.textContent='hash='+raw.length+' b64='+b64.length+' 分'+total+'块发送…';";
+  html += "for(let i=0;i<total;i++){";
+  html += "const data=b64.slice(i*CHUNK,(i+1)*CHUNK);";
+  html += "const form=new URLSearchParams();form.set('seq',i);form.set('total',total);form.set('data',data);";
+  html += "s.textContent='块 '+(i+1)+'/'+total+'（'+data.length+' 字符）…';";
   html += "try{";
-  // ESP32 WebServer 的 text/plain 路径是非阻塞 client.available() 读，WiFi 抖一下
-  // body 就读不到（实测：第一次偶尔成功，第二次空 body）。改回 form-urlencoded，
-  // 库内部用 readBytes(contentLength) 阻塞读，稳。ESP32 端用 server.arg('data')。
-  html += "const form=new URLSearchParams();form.set('data',b64);";
-  html += "const r=await fetch('/print-raster',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:form.toString()});";
+  html += "const r=await fetch('/print-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:form.toString()});";
   html += "const t=await r.text();";
-  // 成功才覆盖整页（ESP32 返回的"已打印"HTML）。失败保留诊断信息在状态行上，
-  // 否则 4xx 错误页会盖掉 b64 长度，没法判断到底是 body 没发出去还是库限制。
-  html += "if(r.ok){document.open();document.write(t);document.close();}";
-  html += "else{s.innerHTML+='<br>HTTP '+r.status+': '+t.replace(/<[^>]+>/g,'').slice(0,300);s.classList.add('err');}";
-  html += "}catch(e){s.textContent+=' / 出错: '+e.message;s.classList.add('err');}";
+  html += "if(!r.ok){s.innerHTML='块 '+i+'/'+total+' 失败 HTTP '+r.status+': '+t.replace(/<[^>]+>/g,'').slice(0,300);s.classList.add('err');return;}";
+  // 最后一块返回完整 HTML，覆盖整页
+  html += "if(i===total-1){document.open();document.write(t);document.close();return;}";
+  html += "}catch(e){s.innerHTML='块 '+i+'/'+total+' 出错: '+e.message;s.classList.add('err');return;}";
+  html += "}";
   html += "})();";
   html += "</script>";
   html += "<a href=\"javascript:history.back()\">← 返回</a>";
@@ -315,6 +333,100 @@ static void handlePrintRaster() {
   server.send(200, "text/html; charset=utf-8", html);
 }
 
+// ---- POST /print-chunk：分块流式打印 ----
+// form 字段：seq=<块号 0-based>  total=<总块数>  data=<这块的 base64 子串>
+// 每块 ~3000 base64 字符（4 的倍数，保证不切断 6-bit 单元）。
+// seq=0：初始化打印机 + 重置会话；seq=total-1：走纸 + 返回 done。
+static void handlePrintChunk() {
+  sendCors();
+
+  if (!server.hasArg("seq") || !server.hasArg("total") || !server.hasArg("data")) {
+    Serial.print("/print-chunk 缺字段, args=");
+    Serial.println(server.args());
+    server.send(400, "text/plain", "missing seq/total/data");
+    return;
+  }
+  int seq = server.arg("seq").toInt();
+  int total = server.arg("total").toInt();
+  const String& chunk = server.arg("data");
+
+  // 上一会话卡死/被中断 → 超时自动重置，下一次 seq=0 能重新开
+  if (printSessionActive && (millis() - printSessionLastMillis) > PRINT_SESSION_TIMEOUT_MS) {
+    Serial.println("打印会话超时，自动重置");
+    printSessionActive = false;
+  }
+
+  if (seq == 0) {
+    Serial.println();
+    Serial.print("==== 新位图打印会话, 总块: ");
+    Serial.println(total);
+    // ESC @ 初始化打印机
+    waitPrinterReady(); Printer.write(0x1B);
+    waitPrinterReady(); Printer.write(0x40);
+    delay(50);
+    printSessionActive = true;
+    printSessionExpectedSeq = 0;
+    printSessionTotalChunks = total;
+    printSessionBytesOut = 0;
+    dtrTimeoutCount = 0;
+  }
+
+  if (!printSessionActive) {
+    server.send(409, "text/plain", "no active session (need seq=0 first)");
+    return;
+  }
+  if (seq != printSessionExpectedSeq) {
+    String msg = "seq mismatch: expected " + String(printSessionExpectedSeq) + " got " + String(seq);
+    Serial.println(msg);
+    server.send(409, "text/plain", msg);
+    return;
+  }
+  if (total != printSessionTotalChunks) {
+    server.send(409, "text/plain", "total changed mid-session");
+    return;
+  }
+
+  size_t outBytes = streamBase64ToPrinter(chunk);
+  printSessionBytesOut += outBytes;
+  printSessionExpectedSeq++;
+  printSessionLastMillis = millis();
+
+  Serial.print("chunk "); Serial.print(seq);
+  Serial.print("/"); Serial.print(total);
+  Serial.print(" b64Len="); Serial.print(chunk.length());
+  Serial.print(" decoded="); Serial.println(outBytes);
+
+  if (seq == total - 1) {
+    // 最后一块：走纸结束
+    waitPrinterReady(); Printer.write('\n');
+    waitPrinterReady(); Printer.write('\n');
+    waitPrinterReady(); Printer.write('\n');
+    printSessionActive = false;
+    Serial.print("==== 打印完成, 总字节: "); Serial.print(printSessionBytesOut);
+    Serial.print(", DTR 超时: "); Serial.println(dtrTimeoutCount);
+
+    String html;
+    html.reserve(512);
+    html += "<!doctype html><html lang=\"zh-CN\"><head>";
+    html += "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
+    html += "<title>已打印</title><style>";
+    html += "body{font-family:-apple-system,'PingFang SC',sans-serif;padding:24px;max-width:520px;margin:0 auto;background:#f7f7f7}";
+    html += ".ok{font-size:28px;color:#0a0}h1{margin:8px 0}";
+    html += ".panel{background:#fff;padding:16px;border-radius:8px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}";
+    html += ".meta{color:#666;font-size:13px;margin-top:8px}a{display:inline-block;margin-top:18px;color:#06f}";
+    html += "</style></head><body>";
+    html += "<div class=\"ok\">✅ 已打印</div>";
+    html += "<h1>ESP32 已发位图到打印机</h1>";
+    html += "<div class=\"panel\"><div class=\"meta\">总块数：" + String(total) + "</div>";
+    html += "<div class=\"meta\">解码后字节数：" + String(printSessionBytesOut) + "</div></div>";
+    html += "<a href=\"javascript:history.back()\">← 返回浏览器上一页</a>";
+    html += "</body></html>";
+    server.send(200, "text/html; charset=utf-8", html);
+  } else {
+    server.send(200, "text/plain", "ok");
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(DTR_PIN, INPUT_PULLUP);
@@ -341,6 +453,8 @@ void setup() {
   server.on("/print", HTTP_OPTIONS, handleOptions);
   server.on("/print-raster", HTTP_POST,    handlePrintRaster);
   server.on("/print-raster", HTTP_OPTIONS, handleOptions);
+  server.on("/print-chunk",  HTTP_POST,    handlePrintChunk);
+  server.on("/print-chunk",  HTTP_OPTIONS, handleOptions);
   server.on("/print-bridge", HTTP_GET,     handlePrintBridge);
   server.onNotFound([]() {
     sendCors();
