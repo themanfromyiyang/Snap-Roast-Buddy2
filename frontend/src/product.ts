@@ -886,8 +886,10 @@ function submitRasterToEsp32(ip: string, base64: string): void {
   // URL hash 用 encodeURIComponent 包一层，避免 base64 里的 +/= 在 location.hash
   // 取出时发生意外的字符变形。
   const encoded = encodeURIComponent(base64);
-  const url = `http://${ip}/print-bridge#${encoded}`;
-  console.log("[print] 跳转到 bridge:", `http://${ip}/print-bridge#…`, "base64 长度:", base64.length);
+  // 加 ?t=now 强制浏览器把它当新 URL：否则两次打印同一张小票时 hash 相同，
+  // 顶层 navigation 不会重新加载 bridge 页面，里面的 IIFE 不再触发，body 发空。
+  const url = `http://${ip}/print-bridge?t=${Date.now()}#${encoded}`;
+  console.log("[print] 跳转到 bridge:", `http://${ip}/print-bridge?t=…#…`, "base64 长度:", base64.length);
   window.location.href = url;
 }
 
