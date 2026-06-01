@@ -432,10 +432,10 @@ async function captureFromCamera() {
 
   const canvas = document.createElement("canvas");
   const outputCanvas = document.createElement("canvas");
-  canvas.width = 720;
-  canvas.height = 960;
-  outputCanvas.width = isLandscapeCapture() ? 960 : 720;
-  outputCanvas.height = isLandscapeCapture() ? 720 : 960;
+  canvas.width = 900;
+  canvas.height = 1200;
+  outputCanvas.width = isLandscapeCapture() ? 1200 : 900;
+  outputCanvas.height = isLandscapeCapture() ? 900 : 1200;
   const context = canvas.getContext("2d");
   const outputContext = outputCanvas.getContext("2d");
   if (!context || !outputContext) return;
@@ -481,7 +481,7 @@ async function captureFromCamera() {
     outputContext.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height);
   }
 
-  selectedImageUrl = outputCanvas.toDataURL("image/jpeg", 0.82);
+  selectedImageUrl = outputCanvas.toDataURL("image/jpeg", 0.92);
   showSelectedImagePreview(selectedImageUrl);
   cameraHint.textContent = settings.triggerMode === "auto" ? "Buddy 已经开始观察这张照片。" : "照片已就位，按开始生成。";
   if (settings.triggerMode === "auto") await startGenerationFromSelected();
@@ -1976,7 +1976,7 @@ async function optimizeSelectedImage(imageUrl: string): Promise<string> {
   const shouldRotate = isLandscapeCapture();
   const orientedWidth = shouldRotate ? image.naturalHeight : image.naturalWidth;
   const orientedHeight = shouldRotate ? image.naturalWidth : image.naturalHeight;
-  const maxEdge = 1024;
+  const maxEdge = 1600;
   const scale = Math.min(1, maxEdge / Math.max(orientedWidth, orientedHeight));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(orientedWidth * scale));
@@ -1992,7 +1992,7 @@ async function optimizeSelectedImage(imageUrl: string): Promise<string> {
   } else {
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
   }
-  return canvas.toDataURL("image/jpeg", 0.78);
+  return canvas.toDataURL("image/jpeg", 0.86);
 }
 
 function loadImageElement(imageUrl: string): Promise<HTMLImageElement> {

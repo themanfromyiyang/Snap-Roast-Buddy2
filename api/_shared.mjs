@@ -9,9 +9,7 @@ const siliconFlowModel = process.env.SILICONFLOW_MODEL ?? "Pro/zai-org/GLM-4.7";
 // SILICONFLOW_CLASSIFY_MODEL / SILICONFLOW_ROAST_MODEL 覆盖。
 const siliconFlowClassifyModel = process.env.SILICONFLOW_CLASSIFY_MODEL ?? "zai-org/GLM-4.5-Air";
 const siliconFlowRoastModel = process.env.SILICONFLOW_ROAST_MODEL ?? "zai-org/GLM-4.5-Air";
-const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Qwen/Qwen2.5-VL-7B-Instruct";
-const siliconFlowVisionMaxTokens = Number(process.env.SILICONFLOW_VISION_MAX_TOKENS ?? 900);
-const siliconFlowVisionTimeoutMs = Number(process.env.SILICONFLOW_VISION_TIMEOUT_MS ?? 45000);
+const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Pro/moonshotai/Kimi-K2.6";
 const siliconFlowImageEditModel = process.env.SILICONFLOW_IMAGE_EDIT_MODEL ?? "Qwen/Qwen-Image-Edit-2509";
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey =
@@ -30,7 +28,6 @@ export async function handleAnalyzeImage(req, res) {
 
     const completion = await fetch(`${siliconFlowBaseUrl}/chat/completions`, {
       method: "POST",
-      signal: AbortSignal.timeout(siliconFlowVisionTimeoutMs),
       headers: authHeaders(),
       body: JSON.stringify({
         model: siliconFlowVisionModel,
@@ -43,7 +40,7 @@ export async function handleAnalyzeImage(req, res) {
             ]
           }
         ],
-        max_tokens: siliconFlowVisionMaxTokens
+        max_tokens: 900
       })
     });
 
@@ -53,12 +50,6 @@ export async function handleAnalyzeImage(req, res) {
     const photoDescription = cleanText(data?.choices?.[0]?.message?.content);
     return sendJson(res, 200, { photoDescription, rawContent: photoDescription });
   } catch (error) {
-    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
-      return sendJson(res, 504, {
-        error: "Vision analysis timed out.",
-        detail: `Vision model ${siliconFlowVisionModel} did not respond within ${Math.round(siliconFlowVisionTimeoutMs / 1000)}s.`
-      });
-    }
     return sendServerError(res, error);
   }
 }
