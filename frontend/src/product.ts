@@ -861,6 +861,7 @@ async function generateSketch(imageUrl: string): Promise<string> {
 
 const ESP32_IP_STORAGE_KEY = "snap_roast_esp32_ip";
 const PRINT_LONG_PRESS_MS = 900;
+const PRINT_CAPTURE_WIDTH_PX = 384;
 
 function hasPrintableText(record: PhotoRecord): boolean {
   return Boolean((record.ticketText ?? "").trim());
@@ -894,22 +895,30 @@ async function exportCurrentPrintCommand(): Promise<void> {
 }
 
 async function createPrintCommandBytes(record: PhotoRecord): Promise<Uint8Array> {
+  return withPrintableTicketElement(record, (ticketElement) => createRasterPrintBytesFromElement(ticketElement));
+}
+
+async function withPrintableTicketElement<T>(record: PhotoRecord, callback: (ticketElement: HTMLElement) => Promise<T>): Promise<T> {
   const host = document.createElement("div");
   host.style.position = "fixed";
   host.style.left = "-10000px";
   host.style.top = "0";
-  host.style.width = "384px";
+  host.style.width = `${PRINT_CAPTURE_WIDTH_PX}px`;
   host.style.pointerEvents = "none";
   host.style.background = "#fff";
   host.style.zIndex = "-1";
 
   const ticketBody = createTicketBody(record);
+  ticketBody.classList.add("print-capture-body");
   host.append(ticketBody);
   document.body.append(host);
 
   try {
+    const ticketElement = ticketBody.querySelector<HTMLElement>(".product-paper");
+    if (!ticketElement) throw new Error("当前结果没有可打印的小票内容。");
+    ticketElement.classList.add("print-capture-paper");
     await waitForTicketRender(host);
-    return await createRasterPrintBytesFromElement(ticketBody);
+    return await callback(ticketElement);
   } finally {
     destroyReceiptPreviews(host);
     host.remove();
@@ -988,17 +997,13 @@ function askForEsp32Ip(current: string): string {
   return normalized;
 }
 
-// imageCarousel 里每条记录对应一个 .album-slide；.product-paper 是当前 slide 的小票纸面外壳
-function getCurrentTicketElement(): HTMLElement | null {
-  const slides = imageCarousel.querySelectorAll<HTMLElement>(".album-slide");
-  const currentSlide = slides[currentRecordIndex];
-  return currentSlide?.querySelector<HTMLElement>(".product-paper") ?? null;
-}
-
-async function buildRasterBase64(element: HTMLElement): Promise<string> {
-  const canvas = await elementToCanvas(element);
-  const raster = canvasToEscPosRaster(canvas);
-  return bytesToBase64(raster);
+// 打印时离屏重建一份纯小票，避免把结果页里的滑动条、插槽等 UI 一起截进位图。
+async function buildRasterBase64FromRecord(record: PhotoRecord): Promise<string> {
+  return withPrintableTicketElement(record, async (ticketElement) => {
+    const canvas = await elementToCanvas(ticketElement);
+    const raster = canvasToEscPosRaster(canvas);
+    return bytesToBase64(raster);
+  });
 }
 
 function submitRasterToEsp32(ip: string, base64: string): void {
@@ -1018,8 +1023,8 @@ function submitRasterToEsp32(ip: string, base64: string): void {
 }
 
 async function triggerPrint(): Promise<void> {
-  const ticketEl = getCurrentTicketElement();
-  if (!ticketEl) {
+  const record = records[currentRecordIndex];
+  if (!hasExportableTicket(record)) {
     window.alert("当前没有可打印的小票。");
     return;
   }
@@ -1030,7 +1035,7 @@ async function triggerPrint(): Promise<void> {
 
   let base64: string;
   try {
-    base64 = await buildRasterBase64(ticketEl);
+    base64 = await buildRasterBase64FromRecord(record);
   } catch (err) {
     window.alert("生成打印位图失败：" + (err instanceof Error ? err.message : String(err)));
     return;
@@ -1098,7 +1103,7 @@ if (hydratedRecord) resultOriginalImage.src = hydratedRecord.originalImageUrl;
 regenerateButton.disabled = !hydratedRecord;
 deleteRecordButton.disabled = !record;
 const printableRecord = hydratedRecord ?? record;
-printButton.disabled = !printableRecord;
+printButton.disabled = !hasExportableTicket(printableRecord);
 exportPrintCommandButton.disabled = !hasExportableTicket(printableRecord);
   fixedPrinterSlot.hidden = false;
   updateResultMeta(hydratedRecord ?? record);

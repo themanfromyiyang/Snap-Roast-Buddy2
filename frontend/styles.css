@@ -2770,6 +2770,33 @@ pre {
   overflow-y: visible;
 }
 
+.print-capture-body {
+  width: 384px;
+  padding-bottom: 0;
+  overflow: visible;
+}
+
+.product-paper.print-capture-paper,
+.product-paper.html-receipt-host.print-capture-paper {
+  width: 384px;
+  max-width: 384px;
+  margin: 0;
+  overflow: visible;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.product-paper.print-capture-paper::before,
+.product-paper.print-capture-paper::after {
+  content: none;
+}
+
+.product-paper.print-capture-paper svg,
+.product-paper.html-receipt-host.print-capture-paper .html-receipt {
+  width: 384px;
+  max-width: 384px;
+}
+
 .product-paper::before,
 .product-paper::after {
   content: "";
