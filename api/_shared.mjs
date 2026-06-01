@@ -10,8 +10,9 @@ const siliconFlowModel = process.env.SILICONFLOW_MODEL ?? "Pro/zai-org/GLM-4.7";
 const siliconFlowClassifyModel = process.env.SILICONFLOW_CLASSIFY_MODEL ?? "zai-org/GLM-4.5-Air";
 const siliconFlowRoastModel = process.env.SILICONFLOW_ROAST_MODEL ?? "zai-org/GLM-4.5-Air";
 const siliconFlowVisionModel = process.env.SILICONFLOW_VISION_MODEL ?? "Qwen/Qwen2.5-VL-7B-Instruct";
+const siliconFlowVisionFallbackModel = process.env.SILICONFLOW_VISION_FALLBACK_MODEL ?? "Qwen/Qwen2.5-VL-7B-Instruct";
 const siliconFlowVisionMaxTokens = Number(process.env.SILICONFLOW_VISION_MAX_TOKENS ?? 900);
-const siliconFlowVisionTimeoutMs = Number(process.env.SILICONFLOW_VISION_TIMEOUT_MS ?? 45000);
+const siliconFlowVisionTimeoutMs = Number(process.env.SILICONFLOW_VISION_TIMEOUT_MS ?? 22000);
 const siliconFlowImageEditModel = process.env.SILICONFLOW_IMAGE_EDIT_MODEL ?? "Qwen/Qwen-Image-Edit-2509";
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey =
@@ -28,28 +29,16 @@ export async function handleAnalyzeImage(req, res) {
 
     if (!imageUrl) return sendJson(res, 400, { error: "imageUrl or imageDataUrl is required." });
 
-    const completion = await fetch(`${siliconFlowBaseUrl}/chat/completions`, {
-      method: "POST",
-      signal: AbortSignal.timeout(siliconFlowVisionTimeoutMs),
-      headers: authHeaders(),
-      body: JSON.stringify({
-        model: siliconFlowVisionModel,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: buildVisionPrompt() },
-              { type: "image_url", image_url: { url: imageUrl } }
-            ]
-          }
-        ],
-        max_tokens: siliconFlowVisionMaxTokens
-      })
-    });
-
-    if (!completion.ok) return sendUpstreamError(res, completion, "SiliconFlow vision request failed.");
-
-    const data = await readUpstreamJson(completion, "SiliconFlow image edit returned a non-JSON response.");
+    const messages = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: buildVisionPrompt() },
+          { type: "image_url", image_url: { url: imageUrl } }
+        ]
+      }
+    ];
+    const data = await requestVisionCompletion(messages);
     const photoDescription = cleanText(data?.choices?.[0]?.message?.content);
     return sendJson(res, 200, { photoDescription, rawContent: photoDescription });
   } catch (error) {
@@ -59,8 +48,50 @@ export async function handleAnalyzeImage(req, res) {
         detail: `Vision model ${siliconFlowVisionModel} did not respond within ${Math.round(siliconFlowVisionTimeoutMs / 1000)}s.`
       });
     }
+    if (error?.name === "VisionFallbackError") {
+      return sendJson(res, 504, {
+        error: "Vision analysis failed.",
+        detail: error.message
+      });
+    }
     return sendServerError(res, error);
   }
+}
+
+async function requestVisionCompletion(messages) {
+  const models = uniqueStrings([siliconFlowVisionModel, siliconFlowVisionFallbackModel]);
+  const errors = [];
+
+  for (const model of models) {
+    try {
+      const completion = await fetch(`${siliconFlowBaseUrl}/chat/completions`, {
+        method: "POST",
+        signal: AbortSignal.timeout(siliconFlowVisionTimeoutMs),
+        headers: authHeaders(),
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: siliconFlowVisionMaxTokens
+        })
+      });
+
+      if (completion.ok) return readUpstreamJson(completion, "SiliconFlow image edit returned a non-JSON response.");
+
+      const detail = await completion.text().catch(() => "");
+      errors.push(`${model}: HTTP ${completion.status} ${detail.slice(0, 160)}`);
+      if (completion.status < 500 && completion.status !== 429) break;
+    } catch (error) {
+      errors.push(`${model}: ${error?.name === "TimeoutError" || error?.name === "AbortError" ? "timeout" : error?.message || String(error)}`);
+    }
+  }
+
+  const error = new Error(`Vision analysis failed after trying ${models.join(", ")}. ${errors.join(" | ")}`);
+  error.name = "VisionFallbackError";
+  throw error;
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set(values.map((value) => cleanText(value)).filter(Boolean)));
 }
 
 export async function handleClassifyLayout(req, res) {
