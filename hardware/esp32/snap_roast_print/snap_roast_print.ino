@@ -80,6 +80,11 @@ static void clearCreds() {
   Serial.println("已清除保存的 WiFi 凭据");
 }
 
+// 全局打印机串口 + WebServer 实例。声明位置必须早于下面任何 handler，
+// 因为后续 handler 函数在文本顺序上引用 `server`（C++ 全局变量按文本可见性解析）。
+HardwareSerial Printer(1);
+WebServer server(80);
+
 // ---- AP 模式：配网 Web handler ----
 static void handleConfigRoot() {
   sendCors();
@@ -331,9 +336,6 @@ static int  printSessionTotalChunks = 0;
 static uint32_t printSessionLastMillis = 0;
 static uint32_t printSessionBytesOut = 0;
 static const uint32_t PRINT_SESSION_TIMEOUT_MS = 30000;
-
-HardwareSerial Printer(1);
-WebServer server(80);
 
 // 检查 DTR 是否 READY，否则忙等到 READY 或超时降级。
 // 超时降级：避免 DTR 接错/极性反时整个 HTTP handler 卡死。
