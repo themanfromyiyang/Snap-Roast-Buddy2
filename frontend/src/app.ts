@@ -166,7 +166,7 @@ for (const example of imageExamples) {
 imageUpload.addEventListener("change", async () => {
   const file = imageUpload.files?.[0];
   if (!file) return;
-  selectedImageDataUrl = await fileToDataUrl(file);
+  selectedImageDataUrl = await optimizeImageDataUrl(await fileToDataUrl(file));
   selectedImageUrl = "";
   imagePreview.src = selectedImageDataUrl;
   resetGeneratedState();
@@ -216,7 +216,7 @@ async function analyzeImage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl })
     });
-    const payload = (await response.json()) as ImageAnalysisResponse;
+    const payload = await parseJsonResponse<ImageAnalysisResponse>(response);
     if (!response.ok || payload.error) throw new Error(formatApiError(payload, "图片分析失败。"));
 
     input.value = payload.photoDescription?.trim() || input.value;
@@ -261,7 +261,7 @@ async function classifyDescription() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ photoDescription })
     });
-    const payload = (await response.json()) as ClassificationResponse;
+    const payload = await parseJsonResponse<ClassificationResponse>(response);
     if (!response.ok || payload.error || !payload.layoutType) throw new Error(formatApiError(payload, "排版分类失败。"));
 
     classifiedLayoutType = normalizeTextLayout(payload.layoutType);
@@ -310,7 +310,7 @@ async function generateWithApi() {
       })
     });
 
-    const payload = (await response.json()) as RoastApiResponse;
+    const payload = await parseJsonResponse<RoastApiResponse>(response);
     if (!response.ok || payload.error) throw new Error(formatApiError(payload, "API request failed."));
 
     latestAiComment = payload.aiComment?.trim() ?? "";
@@ -372,7 +372,7 @@ async function generateMangaImage(imagePayload: string): Promise<string> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl })
   });
-  const payload = (await response.json()) as DoodleResponse;
+  const payload = await parseJsonResponse<DoodleResponse>(response);
   if (!response.ok || payload.error) throw new Error(formatApiError(payload, "漫画生成失败。"));
 
   const imageSrc = payload.imageDataUrl || payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
@@ -386,7 +386,7 @@ async function testSupabaseConnection() {
 
   try {
     const response = await fetch("/api/supabase-health");
-    const payload = (await response.json()) as { ok?: boolean; table?: string; sampleCount?: number; error?: string; detail?: string };
+    const payload = await parseJsonResponse<{ ok?: boolean; table?: string; sampleCount?: number; error?: string; detail?: string }>(response);
     if (!response.ok || !payload.ok) throw new Error(payload.detail || payload.error || "Supabase 连接失败。");
     setStepStatus(
       supabaseStatus,
@@ -573,6 +573,16 @@ function formatApiError(payload: { error?: string; detail?: string }, fallback: 
   return detail;
 }
 
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const rawText = await response.text();
+  try {
+    return (rawText ? JSON.parse(rawText) : {}) as T;
+  } catch {
+    const message = rawText.trim().slice(0, 240) || `HTTP ${response.status}`;
+    throw new Error(response.ok ? `服务器响应格式异常：${message}` : message);
+  }
+}
+
 function setBusy(button: HTMLButtonElement, busy: boolean, label: string) {
   button.disabled = busy;
   button.textContent = label;
@@ -584,6 +594,30 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.addEventListener("load", () => resolve(String(reader.result)));
     reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image.")));
     reader.readAsDataURL(file);
+  });
+}
+
+async function optimizeImageDataUrl(imageUrl: string): Promise<string> {
+  const image = await loadImageElement(imageUrl);
+  const maxEdge = 1600;
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) return imageUrl;
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.86);
+}
+
+function loadImageElement(imageUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener("error", () => reject(new Error("读取导入照片失败。")), { once: true });
+    image.src = imageUrl;
   });
 }
 

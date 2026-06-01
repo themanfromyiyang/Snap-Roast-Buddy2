@@ -168,15 +168,13 @@ export async function handleGenerateDoodle(req, res) {
         prompt,
         num_inference_steps: 20,
         guidance_scale: 4,
-        image: imageUrl,
-        image2: imageUrl,
-        image3: imageUrl
+        image: imageUrl
       })
     });
 
     if (!completion.ok) return sendUpstreamError(res, completion, "SiliconFlow image edit request failed.");
 
-    const data = await completion.json();
+    const data = await readUpstreamJson(completion, "SiliconFlow image edit returned a non-JSON response.");
     const imageResult = extractGeneratedImage(data);
     const imageDataUrl = imageResult.base64 ? "" : await downloadImageAsDataUrl(imageResult.url);
 

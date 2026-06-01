@@ -2349,7 +2349,7 @@ for (const example of imageExamples) {
 imageUpload.addEventListener("change", async () => {
   const file = imageUpload.files?.[0];
   if (!file) return;
-  selectedImageDataUrl = await fileToDataUrl(file);
+  selectedImageDataUrl = await optimizeImageDataUrl(await fileToDataUrl(file));
   selectedImageUrl = "";
   imagePreview.src = selectedImageDataUrl;
   resetGeneratedState();
@@ -2395,7 +2395,7 @@ async function analyzeImage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl })
     });
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok || payload.error) throw new Error(formatApiError(payload, "\u56FE\u7247\u5206\u6790\u5931\u8D25\u3002"));
     input.value = payload.photoDescription?.trim() || input.value;
     resetGeneratedState();
@@ -2435,7 +2435,7 @@ async function classifyDescription() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ photoDescription })
     });
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok || payload.error || !payload.layoutType) throw new Error(formatApiError(payload, "\u6392\u7248\u5206\u7C7B\u5931\u8D25\u3002"));
     classifiedLayoutType = normalizeTextLayout(payload.layoutType);
     classificationReason.textContent = payload.reason || "\u5DF2\u5B8C\u6210\u5206\u7C7B\u3002";
@@ -2479,7 +2479,7 @@ async function generateWithApi() {
         roastLevel: mapRoastLevel(roastLevel.value)
       })
     });
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok || payload.error) throw new Error(formatApiError(payload, "API request failed."));
     latestAiComment = payload.aiComment?.trim() ?? "";
     latestEnhancedDescription = payload.enhancedDescription?.trim() ?? "";
@@ -2535,7 +2535,7 @@ async function generateMangaImage(imagePayload) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(selectedImageDataUrl ? { imageDataUrl: selectedImageDataUrl } : { imageUrl: selectedImageUrl })
   });
-  const payload = await response.json();
+  const payload = await parseJsonResponse(response);
   if (!response.ok || payload.error) throw new Error(formatApiError(payload, "\u6F2B\u753B\u751F\u6210\u5931\u8D25\u3002"));
   const imageSrc = payload.imageDataUrl || payload.imageUrl || (payload.imageBase64 ? `data:image/png;base64,${payload.imageBase64}` : "");
   if (!imageSrc) throw new Error("\u56FE\u50CF\u7F16\u8F91\u6A21\u578B\u6CA1\u6709\u8FD4\u56DE\u56FE\u7247\u3002");
@@ -2546,7 +2546,7 @@ async function testSupabaseConnection() {
   setStepStatus(supabaseStatus, "\u6B63\u5728\u8FDE\u63A5 Supabase product_records \u8868\u3002", "loading");
   try {
     const response = await fetch("/api/supabase-health");
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok || !payload.ok) throw new Error(payload.detail || payload.error || "Supabase \u8FDE\u63A5\u5931\u8D25\u3002");
     setStepStatus(
       supabaseStatus,
@@ -2714,6 +2714,15 @@ function formatApiError(payload, fallback) {
   }
   return detail;
 }
+async function parseJsonResponse(response) {
+  const rawText = await response.text();
+  try {
+    return rawText ? JSON.parse(rawText) : {};
+  } catch {
+    const message = rawText.trim().slice(0, 240) || `HTTP ${response.status}`;
+    throw new Error(response.ok ? `\u670D\u52A1\u5668\u54CD\u5E94\u683C\u5F0F\u5F02\u5E38\uFF1A${message}` : message);
+  }
+}
 function setBusy(button, busy, label) {
   button.disabled = busy;
   button.textContent = label;
@@ -2724,6 +2733,28 @@ function fileToDataUrl(file) {
     reader.addEventListener("load", () => resolve(String(reader.result)));
     reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image.")));
     reader.readAsDataURL(file);
+  });
+}
+async function optimizeImageDataUrl(imageUrl) {
+  const image = await loadImageElement(imageUrl);
+  const maxEdge = 1600;
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) return imageUrl;
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.86);
+}
+function loadImageElement(imageUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener("error", () => reject(new Error("\u8BFB\u53D6\u5BFC\u5165\u7167\u7247\u5931\u8D25\u3002")), { once: true });
+    image.src = imageUrl;
   });
 }
 function mustQuery(selector) {

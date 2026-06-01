@@ -326,7 +326,7 @@ imageInput.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
   imageInput.value = "";
   if (!file) return;
-  selectedImageUrl = await normalizeSelectedImageOrientation(await fileToDataUrl(file));
+  selectedImageUrl = await optimizeSelectedImage(await fileToDataUrl(file));
   showSelectedImagePreview(selectedImageUrl);
   cameraHint.textContent =
     settings.triggerMode === "auto" ? "Buddy 已经开始观察导入的照片。" : "照片已放进取景框，按开始生成。";
@@ -1893,9 +1893,19 @@ async function postJson<T extends { error?: string; detail?: string }>(url: stri
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
-  const payload = (await response.json()) as T;
+  const payload = await parseJsonResponse<T>(response);
   if (!response.ok || payload.error) throw new Error(formatApiError(payload, "生成失败。"));
   return payload;
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const rawText = await response.text();
+  try {
+    return (rawText ? JSON.parse(rawText) : {}) as T;
+  } catch {
+    const message = rawText.trim().slice(0, 240) || `HTTP ${response.status}`;
+    throw new Error(response.ok ? `服务器响应格式异常：${message}` : message);
+  }
 }
 
 function mapRoastLevel(level: ProductRoastLevel): RoastLevel {
@@ -1954,18 +1964,28 @@ function isLandscapeCapture(): boolean {
   return settings.captureOrientation === "landscape";
 }
 
-async function normalizeSelectedImageOrientation(imageUrl: string): Promise<string> {
-  if (!isLandscapeCapture()) return imageUrl;
+async function optimizeSelectedImage(imageUrl: string): Promise<string> {
   const image = await loadImageElement(imageUrl);
+  const shouldRotate = isLandscapeCapture();
+  const orientedWidth = shouldRotate ? image.naturalHeight : image.naturalWidth;
+  const orientedHeight = shouldRotate ? image.naturalWidth : image.naturalHeight;
+  const maxEdge = 1600;
+  const scale = Math.min(1, maxEdge / Math.max(orientedWidth, orientedHeight));
   const canvas = document.createElement("canvas");
-  canvas.width = image.naturalHeight;
-  canvas.height = image.naturalWidth;
+  canvas.width = Math.max(1, Math.round(orientedWidth * scale));
+  canvas.height = Math.max(1, Math.round(orientedHeight * scale));
   const context = canvas.getContext("2d");
   if (!context) return imageUrl;
-  context.translate(0, canvas.height);
-  context.rotate(-Math.PI / 2);
-  context.drawImage(image, 0, 0);
-  return canvas.toDataURL("image/jpeg", 0.92);
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (shouldRotate) {
+    context.translate(0, canvas.height);
+    context.rotate(-Math.PI / 2);
+    context.drawImage(image, 0, 0, canvas.height, canvas.width);
+  } else {
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  }
+  return canvas.toDataURL("image/jpeg", 0.86);
 }
 
 function loadImageElement(imageUrl: string): Promise<HTMLImageElement> {
